@@ -12,14 +12,10 @@ import re
 import threading
 from urllib.parse import quote_plus, urlencode
 
-# --- CONFIG ---
-try:
-    ADDON = xbmcaddon.Addon('plugin.video.tmdbmovies')
-    API_KEY = "8ad3c21a92a64da832c559d58cc63ab4"
-    BASE_URL = "https://api.themoviedb.org/3"
-except:
-    API_KEY = "8ad3c21a92a64da832c559d58cc63ab4"
-    BASE_URL = "https://api.themoviedb.org/3"
+# Use the same credentials as the main plugin.  These scripts are launched
+# independently by Kodi, so a duplicated (and now stale) hard-coded key here
+# caused the context menu to fail while normal browsing still worked.
+from resources.lib.config import ADDON, API_KEY, BASE_URL
 
 def _run_daemon(target, *args):
     """Fire-and-forget cu thread daemon (nu blochează shutdown-ul CPythonInvoker)."""

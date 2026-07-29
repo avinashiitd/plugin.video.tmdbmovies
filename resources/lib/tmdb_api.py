@@ -669,14 +669,17 @@ def get_dates(days, reverse=True):
 
 
 def get_tmdb_movies_standard(action, page_no):
-    import requests
     import datetime
+
+    if action and action.startswith('trakt_'):
+        return None
     
     # Toate limbile indiene
     INDIAN_LANGS = "hi|ta|te|ml|kn|pa|bn|mr"
     
-    # Baza URL
-    url = f"{BASE_URL}/discover/movie?api_key={API_KEY}&language={LANG}&page={page_no}&region=US"
+    # An unknown action must fail cleanly rather than quietly showing an
+    # unrelated default discovery list.
+    url = None
 
     if action == 'tmdb_movies_popular':
         url = f"{BASE_URL}/movie/popular?api_key={API_KEY}&language={LANG}&page={page_no}"
@@ -901,12 +904,35 @@ def get_tmdb_movies_standard(action, page_no):
             f"&page={page_no}"
         )
 
-    return requests.get(url, timeout=15)
+    return _tmdb_get(url, action)
+
+
+def _tmdb_get(url, action=''):
+    if not url:
+        log(f"[TMDB] No API route registered for action: {action}", xbmc.LOGERROR)
+        return None
+    try:
+        from resources.lib.config import get_headers, get_session
+        # Use the shared session so transient TMDb 5xx errors receive the
+        # retry policy configured in config.py.  A UA also avoids occasional
+        # intermediary/proxy rejections on Kodi installations.
+        r = get_session().get(url, headers=get_headers(), timeout=15)
+        if r.status_code != 200:
+            log(f"[TMDB] API {r.status_code} for {action or url}: {r.text[:200]}", xbmc.LOGERROR)
+            return None
+        return r
+    except Exception as e:
+        log(f"[TMDB] Request failed for {action or url}: {e}", xbmc.LOGERROR)
+        return None
 
 
 def get_tmdb_tv_standard(action, page_no):
     import requests # Lazy loading
+    url = None
     
+    if action and action.startswith('trakt_'):
+        return None
+
     if action == 'tmdb_tv_popular':
         url = f"{BASE_URL}/tv/popular?api_key={API_KEY}&language={LANG}&page={page_no}"
     elif action == 'tmdb_tv_premieres':
@@ -1007,7 +1033,7 @@ def get_tmdb_tv_standard(action, page_no):
             f"&page={page_no}"
         )
 
-    return requests.get(url, timeout=15)
+    return _tmdb_get(url, action)
 
 
 def build_movie_list(params):
@@ -1029,6 +1055,7 @@ def build_movie_list(params):
         params['list_type'] = list_type
         params['media_type'] = 'movies'
         trakt_api.trakt_discovery_list(params)
+        window.clearProperty('tmdbmovies_loading_active')
         return
 
     from resources.lib.config import PAGE_LIMIT
@@ -1041,6 +1068,7 @@ def build_movie_list(params):
     cached_data = get_fast_cache(cache_key)
     if cached_data:
         render_from_fast_cache(cached_data)
+        window.clearProperty('tmdbmovies_loading_active')
         return
     # ---------------------------------
 
@@ -1065,6 +1093,7 @@ def build_movie_list(params):
 
     if not all_results:
         xbmcplugin.endOfDirectory(HANDLE)
+        window.clearProperty('tmdbmovies_loading_active')
         return
 
     current_items = all_results[:PAGE_LIMIT]
@@ -1141,6 +1170,7 @@ def build_tvshow_list(params):
         params['list_type'] = list_type
         params['media_type'] = 'shows'
         trakt_api.trakt_discovery_list(params)
+        window.clearProperty('tmdbmovies_loading_active')
         return
 
     from resources.lib.config import PAGE_LIMIT
@@ -1153,6 +1183,7 @@ def build_tvshow_list(params):
     cached_data = get_fast_cache(cache_key)
     if cached_data:
         render_from_fast_cache(cached_data)
+        window.clearProperty('tmdbmovies_loading_active')
         return
     # ---------------------------------
 
@@ -1177,6 +1208,7 @@ def build_tvshow_list(params):
 
     if not all_results:
         xbmcplugin.endOfDirectory(HANDLE)
+        window.clearProperty('tmdbmovies_loading_active')
         return
 
     current_items = all_results[:PAGE_LIMIT]
@@ -1234,7 +1266,10 @@ def build_tvshow_list(params):
     # Save to RAM
     set_fast_cache(cache_key, [{'label': i['li'].getLabel(), 'url': i['url'], 'is_folder': i['is_folder'], 
                                 'art': i['art'], 'info': i['info'], 'cm': i['cm_items'], 
-                                'resume_time': 0, 'total_time': 0} for i in cache_list])
+                                # TV entries do not have playback resume data;
+                                # next-page entries do.  Use defaults for both.
+                                'resume_time': i.get('resume_time', 0),
+                                'total_time': i.get('total_time', 0)} for i in cache_list])
 
 def _get_full_context_menu(tmdb_id, content_type, title='', is_in_favorites_view=False, year='', season=None, episode=None, imdb_id=''):
     cm = []
@@ -1652,16 +1687,7 @@ def tmdb_auth_v4():
         
         # 2. Construim URL-ul complet
         url_full = f"https://www.themoviedb.org/auth/access?request_token={request_token}"
-        
-        # --- GENERARE LINK SCURT (TinyURL) ---
-        try:
-            r_tiny = requests.get(f'http://tinyurl.com/api-create.php?url={url_full}', timeout=5)
-            if r_tiny.status_code == 200:
-                url_display = r_tiny.text
-            else:
-                url_display = url_full # Fallback la cel lung
-        except:
-            url_display = url_full
+        url_display = _shorten_auth_url(url_full)
         
         # Copiem link-ul lung în clipboard (dacă e pe PC/Android)
         xbmc.executebuiltin(f'SetProperty(TMDbAuthLink,{url_full},home)')
@@ -1719,42 +1745,52 @@ def get_tmdb_session():
     return None
 
 
+def _shorten_auth_url(url_full):
+    try:
+        r_tiny = requests.get(f'http://tinyurl.com/api-create.php?url={url_full}', timeout=5)
+        if r_tiny.status_code == 200 and r_tiny.text.startswith('http'):
+            return r_tiny.text
+    except:
+        pass
+    return url_full
+
+
 def tmdb_auth():
+    """Connect TMDB account via browser approval (TMDB-recommended flow)."""
     dialog = xbmcgui.Dialog()
-    
+
     try:
         url = f"{BASE_URL}/authentication/token/new?api_key={API_KEY}"
         r = requests.get(url, timeout=10)
-        request_token = r.json().get('request_token')
+        if r.status_code == 401:
+            dialog.notification("[B][COLOR FF00CED1]TMDB[/COLOR][/B]", "Invalid TMDB API key", xbmcgui.NOTIFICATION_ERROR)
+            return False
+        r.raise_for_status()
+        data = r.json()
+        if not data.get('success'):
+            dialog.notification("[B][COLOR FF00CED1]TMDB[/COLOR][/B]", data.get('status_message', 'Token initialization error'), xbmcgui.NOTIFICATION_ERROR)
+            return False
+        request_token = data.get('request_token')
         if not request_token:
             dialog.notification("[B][COLOR FF00CED1]TMDB[/COLOR][/B]", "Token initialization error", xbmcgui.NOTIFICATION_ERROR)
             return False
-    except:
+    except Exception as e:
+        log(f"[TMDB] Token request error: {e}", xbmc.LOGERROR)
         dialog.notification("[B][COLOR FF00CED1]TMDB[/COLOR][/B]", "Server connection error", xbmcgui.NOTIFICATION_ERROR)
         return False
 
-    username = dialog.input("Enter TMDB Username", type=xbmcgui.INPUT_ALPHANUM)
-    if not username: return False
+    auth_url = f"https://www.themoviedb.org/authenticate/{request_token}"
+    url_display = _shorten_auth_url(auth_url)
+    xbmc.executebuiltin(f'SetProperty(TMDbAuthLink,{auth_url},home)')
 
-    password = dialog.input("Enter TMDB Password", type=xbmcgui.INPUT_ALPHANUM, option=xbmcgui.ALPHANUM_HIDE_INPUT)
-    if not password: return False
-
-    try:
-        validate_url = f"{BASE_URL}/authentication/token/validate_with_login?api_key={API_KEY}"
-        payload = {
-            'username': username,
-            'password': password,
-            'request_token': request_token
-        }
-        r = requests.post(validate_url, json=payload, timeout=15)
-        
-        if r.status_code != 200:
-            dialog.notification("[B][COLOR FF00CED1]TMDB[/COLOR][/B]", "Incorrect username or password!", xbmcgui.NOTIFICATION_ERROR)
-            return False
-            
-    except Exception as e:
-        log(f"[TMDB] Login Error: {e}", xbmc.LOGERROR)
-        dialog.notification("[B][COLOR FF00CED1]TMDB[/COLOR][/B]", "Validation error", xbmcgui.NOTIFICATION_ERROR)
+    text = (
+        "Authorization required for your TMDB account:\n\n"
+        "1. Open this link on your phone or PC:\n"
+        f"[COLOR yellow][B]{url_display}[/B][/COLOR]\n\n"
+        "2. Log in and press [B]Approve[/B].\n"
+        "3. After approving on the site, press [B]OK[/B] here."
+    )
+    if not dialog.yesno("TMDb Authorization", text, yeslabel="I Approved", nolabel="Cancel"):
         return False
 
     return create_tmdb_session(request_token)
@@ -1766,10 +1802,21 @@ def create_tmdb_session(request_token):
         r = requests.post(session_url, json={'request_token': request_token}, timeout=10)
 
         if r.status_code != 200:
-            dialog.notification("[B][COLOR FF00CED1]TMDB[/COLOR][/B]", "Session creation error!", xbmcgui.NOTIFICATION_ERROR)
+            try:
+                msg = r.json().get('status_message', 'Session creation error')
+            except:
+                msg = 'Session creation error'
+            if 'approved' in msg.lower() or r.status_code == 401:
+                msg = 'Request not approved yet. Open the link, approve access, then try again.'
+            dialog.notification("[B][COLOR FF00CED1]TMDB[/COLOR][/B]", msg, xbmcgui.NOTIFICATION_ERROR)
             return False
 
-        session_id = r.json().get('session_id')
+        data = r.json()
+        if not data.get('success'):
+            dialog.notification("[B][COLOR FF00CED1]TMDB[/COLOR][/B]", data.get('status_message', 'Session creation error'), xbmcgui.NOTIFICATION_ERROR)
+            return False
+
+        session_id = data.get('session_id')
         if not session_id:
             return False
 
@@ -1839,7 +1886,7 @@ def tmdb_v4_request(endpoint, method='GET', data=None):
     url = f"{TMDB_V4_BASE_URL}{endpoint}"
     
     headers = {
-        'Authorization': f'Bearer {API_KEY}',
+        'Authorization': f'Bearer {TMDB_V4_READ_TOKEN}',
         'Content-Type': 'application/json;charset=utf-8'
     }
     

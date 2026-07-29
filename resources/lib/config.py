@@ -31,6 +31,8 @@ def _load_settings_dict():
     try:
         import xml.etree.ElementTree as ET
         _path = _get_settings_xml_path()
+        if not os.path.exists(_path):
+            return {}
         _mtime = os.path.getmtime(_path)
         with open(_path, 'r', encoding='utf-8', errors='replace') as _f:
             _raw = _f.read()
@@ -65,10 +67,15 @@ def _get_settings_dict():
     global _SETTINGS_DICT, _SETTINGS_MTIME
     if _SETTINGS_DICT is not None:
         try:
-            _mtime = os.path.getmtime(_get_settings_xml_path())
-            if _mtime != _SETTINGS_MTIME:
+            _path = _get_settings_xml_path()
+            if not os.path.exists(_path):
                 _SETTINGS_DICT = None
                 _get_window().clearProperty(_SETTINGS_CACHE_KEY)
+            else:
+                _mtime = os.path.getmtime(_path)
+                if _mtime != _SETTINGS_MTIME:
+                    _SETTINGS_DICT = None
+                    _get_window().clearProperty(_SETTINGS_CACHE_KEY)
         except:
             pass
     if _SETTINGS_DICT is not None:
@@ -151,7 +158,10 @@ PAGE_LIMIT_OPTIONS = [20, 40, 60, 80, 100]
 def _get_page_limit_idx():
     """Returnează indicele page_limit (0-4). ADDON.getSetting e deja patch-at să citească via JSON-RPC."""
     try:
-        return int(ADDON.getSetting('page_limit'))
+        index = int(ADDON.getSetting('page_limit'))
+        # Settings can retain an old or manually edited value.  Do not let an
+        # invalid value turn opening a directory into an IndexError.
+        return max(0, min(index, len(PAGE_LIMIT_OPTIONS) - 1))
     except:
         return 0
 
