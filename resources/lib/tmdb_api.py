@@ -165,7 +165,11 @@ def prefetch_metadata_parallel(items, media_type):
             pass
     
     threads = []
-    for item in items:
+    # A 100-item page used to launch 100 simultaneous TMDb requests.  Besides
+    # exhausting Kodi's thread pool, that can produce 429 responses and make
+    # the plugin appear unable to connect.  The first visible items get the
+    # responsiveness benefit; the rest are fetched on demand.
+    for item in items[:20]:
         t = threading.Thread(target=fetch_task, args=(item,))
         t.daemon = True
         threads.append(t)
@@ -1046,7 +1050,10 @@ def build_movie_list(params):
         xbmc.sleep(100)
 # -----------------------------------------
     action = params.get('action')
-    page = int(params.get('new_page', '1'))
+    try:
+        page = max(1, int(params.get('new_page', '1')))
+    except (TypeError, ValueError):
+        page = 1
 
     # Trakt redirection
     if action and 'trakt_movies_' in action:
@@ -1162,7 +1169,10 @@ def build_tvshow_list(params):
     if xbmcgui.Window(10000).getProperty('tmdbmovies_warmup_busy') == 'true':
         xbmc.sleep(100)
     action = params.get('action')
-    page = int(params.get('new_page', '1'))
+    try:
+        page = max(1, int(params.get('new_page', '1')))
+    except (TypeError, ValueError):
+        page = 1
 
     if action and 'trakt_tv_' in action:
         from resources.lib import trakt_api
@@ -1879,14 +1889,19 @@ def tmdb_logout():
     xbmc.executebuiltin("Container.Refresh")
 
 def tmdb_v4_request(endpoint, method='GET', data=None):
-    session = get_tmdb_session()
-    if not session:
+    # v4 account endpoints require the user access token returned by the v4
+    # browser approval flow.  The application read token cannot access a
+    # user's lists, and requiring a separate v3 session made v4 authorization
+    # appear successful while every follow-up request failed with 401/403.
+    user_token = get_tmdb_v4_token()
+    if not user_token:
+        log("[TMDB-V4] No user access token; authorize TMDb v4 first", xbmc.LOGWARNING)
         return None
     
     url = f"{TMDB_V4_BASE_URL}{endpoint}"
     
     headers = {
-        'Authorization': f'Bearer {TMDB_V4_READ_TOKEN}',
+        'Authorization': f'Bearer {user_token}',
         'Content-Type': 'application/json;charset=utf-8'
     }
     
@@ -1911,11 +1926,10 @@ def tmdb_v4_request(endpoint, method='GET', data=None):
 
 
 def get_tmdb_user_lists_v4():
-    session = get_tmdb_session()
-    if not session:
+    token_data = read_json(TMDB_V4_TOKEN_FILE) or {}
+    account_id = token_data.get('account_id')
+    if not account_id:
         return []
-    
-    account_id = session.get('account_id')
     all_lists = []
     page = 1
     
@@ -2206,7 +2220,10 @@ def fetch_tmdb_list_items_all(list_id):
 def tmdb_list_items(params):
     list_id = params.get('list_id')
     list_name = params.get('list_name', '')
-    page = int(params.get('page', '1'))
+    try:
+        page = max(1, int(params.get('page', '1')))
+    except (TypeError, ValueError):
+        page = 1
 
     # --- FAST CACHE CHECK (RAM) ---
     cache_key = f"tmdb_custom_list_{list_id}_{page}"
@@ -2246,12 +2263,15 @@ def clear_list_cache(params):
 
 def get_tmdb_account_list(endpoint, page_no, session):
     url = f"{BASE_URL}/account/{session['account_id']}/{endpoint}?api_key={API_KEY}&session_id={session['session_id']}&language={LANG}&page={page_no}&sort_by=created_at.desc"
-    return requests.get(url, timeout=10)
+    return _tmdb_get(url, f"account/{endpoint}")
 
 
 def tmdb_watchlist(params):
     content_type = params.get('type')
-    page = int(params.get('page', '1'))
+    try:
+        page = max(1, int(params.get('page', '1')))
+    except (TypeError, ValueError):
+        page = 1
 
     # --- 1. FAST CACHE CHECK (RAM) ---
     cache_key = f"tmdb_watchlist_{content_type}_{page}"
@@ -6449,7 +6469,9 @@ def process_single_list_warmup(action, content_type, page=1):
                     'label': processed['label'], 'url': processed['url'], 
                     'is_folder': processed['is_folder'], 'art': processed['art'], 
                     'info': processed['info'], 'cm': processed['cm_items'], 
-                    'resume_time': processed['resume_time'], 'total_time': processed['total_time']
+                    # TV entries are folders and do not provide resume data.
+                    'resume_time': processed.get('resume_time', 0),
+                    'total_time': processed.get('total_time', 0)
                 })
         except: continue
 
