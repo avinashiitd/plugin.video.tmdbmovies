@@ -1,3 +1,9 @@
+1.1.205
+- Fixed reliable plugin/service entry imports across Kodi invokers
+- Prevented disabled Debrid/Stremio providers from generating connection errors
+- Added TMDb request retry/rate-limit handling and optional per-user API key setting
+- Fixed v4 TMDb user-token requests, warmup cache failures, stale settings reads, and invalid pagination values
+
 1.1.204
 - Improved library reverse sync performance (to Trakt)
 

@@ -209,6 +209,16 @@ def get_search_menu_items():
     return items
 
 
+def _warmup_is_due(window, property_name, now):
+    """Return whether a menu warmup may run without trusting stale UI state."""
+    try:
+        return now - float(window.getProperty(property_name) or 0) > 300
+    except (TypeError, ValueError):
+        # Window properties survive more situations than Python state.  A
+        # malformed value must not prevent the Movies/TV menu from opening.
+        return True
+
+
 # =============================================================================
 # ROUTER PRINCIPAL
 # =============================================================================
@@ -265,8 +275,7 @@ def run_plugin():
         import time
         window = xbmcgui.Window(10000)
         now = time.time()
-        last_warmup = window.getProperty('tmdb_last_warmup_movie')
-        if not last_warmup or (now - float(last_warmup)) > 300:
+        if _warmup_is_due(window, 'tmdb_last_warmup_movie', now):
             from resources.lib import tmdb_api
             tmdb_api.run_background_warmup('movie')
             window.setProperty('tmdb_last_warmup_movie', str(now))
@@ -279,8 +288,7 @@ def run_plugin():
         import time
         window = xbmcgui.Window(10000)
         now = time.time()
-        last_warmup = window.getProperty('tmdb_last_warmup_tv')
-        if not last_warmup or (now - float(last_warmup)) > 300:
+        if _warmup_is_due(window, 'tmdb_last_warmup_tv', now):
             from resources.lib import tmdb_api
             tmdb_api.run_background_warmup('tv')
             window.setProperty('tmdb_last_warmup_tv', str(now))
@@ -1094,17 +1102,16 @@ def run_service():
                 clear_settings_cache()
             except:
                 pass
-        try:
-            from resources.lib.utils import reset_debug_cache
-            reset_debug_cache()
-        except:
-            pass
-        
-        try:
-            from resources.lib.scrapers import reset_debug_cache as reset_scrapers_debug
-            reset_scrapers_debug()
-        except:
-            pass
+            try:
+                from resources.lib.utils import reset_debug_cache
+                reset_debug_cache()
+            except:
+                pass
+            try:
+                from resources.lib.scraper import reset_debug_cache as reset_scrapers_debug
+                reset_scrapers_debug()
+            except:
+                pass
 
         def update_context_menu_property(self):
             window = xbmcgui.Window(10000)

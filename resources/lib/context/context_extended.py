@@ -12,14 +12,9 @@ import re
 import threading
 from urllib.parse import quote_plus
 
-# --- CONFIG ---
-try:
-    ADDON = xbmcaddon.Addon('plugin.video.tmdbmovies')
-    API_KEY = "8ad3c21a92a64da832c559d58cc63ab4"
-    BASE_URL = "https://api.themoviedb.org/3"
-except:
-    API_KEY = "8ad3c21a92a64da832c559d58cc63ab4"
-    BASE_URL = "https://api.themoviedb.org/3"
+# Keep context actions on the plugin's configured TMDb credential rather than
+# an independent key which can be revoked or quota-limited separately.
+from resources.lib.config import ADDON, API_KEY, BASE_URL
 
 def _run_daemon(target, *args):
     """Fire-and-forget cu thread daemon (nu blochează shutdown-ul CPythonInvoker)."""

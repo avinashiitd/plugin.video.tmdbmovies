@@ -31,6 +31,8 @@ def _load_settings_dict():
     try:
         import xml.etree.ElementTree as ET
         _path = _get_settings_xml_path()
+        if not os.path.exists(_path):
+            return {}
         _mtime = os.path.getmtime(_path)
         with open(_path, 'r', encoding='utf-8', errors='replace') as _f:
             _raw = _f.read()
@@ -65,25 +67,35 @@ def _get_settings_dict():
     global _SETTINGS_DICT, _SETTINGS_MTIME
     if _SETTINGS_DICT is not None:
         try:
-            _mtime = os.path.getmtime(_get_settings_xml_path())
-            if _mtime != _SETTINGS_MTIME:
+            _path = _get_settings_xml_path()
+            if not os.path.exists(_path):
                 _SETTINGS_DICT = None
                 _get_window().clearProperty(_SETTINGS_CACHE_KEY)
+            else:
+                _mtime = os.path.getmtime(_path)
+                if _mtime != _SETTINGS_MTIME:
+                    _SETTINGS_DICT = None
+                    _get_window().clearProperty(_SETTINGS_CACHE_KEY)
         except:
             pass
     if _SETTINGS_DICT is not None:
         return _SETTINGS_DICT
+    # Do not restore settings from a Window property when settings.xml is
+    # available.  That property can outlive an addon reload and previously
+    # caused changed settings (including provider credentials) to be ignored.
+    try:
+        if os.path.exists(_get_settings_xml_path()):
+            return _load_settings_dict()
+    except:
+        pass
+
+    # A Window property is only a fallback for platforms where Kodi exposes no
+    # readable settings file.
     try:
         _raw = _get_window().getProperty(_SETTINGS_CACHE_KEY)
         if _raw:
             _d = json.loads(_raw)
             if _d:
-                # Check if file mtime matches Window Property cache
-                try:
-                    _mtime = os.path.getmtime(_get_settings_xml_path())
-                    _SETTINGS_MTIME = _mtime
-                except:
-                    pass
                 _SETTINGS_DICT = _d
                 return _SETTINGS_DICT
     except:
@@ -151,7 +163,10 @@ PAGE_LIMIT_OPTIONS = [20, 40, 60, 80, 100]
 def _get_page_limit_idx():
     """Returnează indicele page_limit (0-4). ADDON.getSetting e deja patch-at să citească via JSON-RPC."""
     try:
-        return int(ADDON.getSetting('page_limit'))
+        index = int(ADDON.getSetting('page_limit'))
+        # Settings can retain an old or manually edited value.  Do not let an
+        # invalid value turn opening a directory into an IndexError.
+        return max(0, min(index, len(PAGE_LIMIT_OPTIONS) - 1))
     except:
         return 0
 
@@ -189,7 +204,10 @@ LISTS_CACHE_TTL = 3600
 # URLs
 BASE_URL = "https://api.themoviedb.org/3"
 TMDB_V4_BASE_URL = "https://api.themoviedb.org/4"
-API_KEY = "28af5f8c53c4bd145a3a39525ccbf764"
+DEFAULT_TMDB_API_KEY = "28af5f8c53c4bd145a3a39525ccbf764"
+# An optional user key avoids an outage for every user if the bundled public
+# key is quota-limited or rotated.  It remains private in Kodi's profile.
+API_KEY = (ADDON.getSetting('tmdb_api_key') or '').strip() or DEFAULT_TMDB_API_KEY
 TRAKT_CLIENT_ID = "67149cca60e6dd23f9f56ba45e1187ce0f9cb9c73363364eb24560c7627c3daf"
 TRAKT_CLIENT_SECRET = '7a237effa309ecb580cc167985b5df05f04b1dc163edfd6d2000b8536fc44a92'
 TRAKT_API_URL = "https://api.trakt.tv"
@@ -228,7 +246,13 @@ def get_session():
         from requests.adapters import HTTPAdapter
         from urllib3.util.retry import Retry
         _SESSION = requests.Session()
-        retries = Retry(total=5, backoff_factor=0.1, status_forcelist=[500, 502, 503, 504])
+        retries = Retry(
+            total=3,
+            backoff_factor=0.25,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=frozenset(['GET']),
+            respect_retry_after_header=True,
+        )
         _SESSION.mount('https://api.themoviedb.org', HTTPAdapter(pool_maxsize=100, max_retries=retries, pool_block=False))
     return _SESSION
 # -----------------------------------------------------------

@@ -11,9 +11,9 @@ import xbmcaddon
 import re
 from urllib.parse import quote_plus, urlencode
 
-ADDON = xbmcaddon.Addon('plugin.video.tmdbmovies')
-API_KEY = "8ad3c21a92a64da832c559d58cc63ab4"
-BASE_URL = "https://api.themoviedb.org/3"
+# Context scripts run in a separate Kodi invoker.  Import config after adding
+# the addon root above so trailer lookups use the same working TMDb key.
+from resources.lib.config import ADDON, API_KEY, BASE_URL
 
 def log(msg):
     xbmc.log(f"[TMDb Play Trailer] {msg}", xbmc.LOGINFO)

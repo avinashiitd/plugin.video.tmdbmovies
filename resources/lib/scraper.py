@@ -7066,8 +7066,13 @@ def get_stream_data(imdb_id, content_type, season=None, episode=None, progress_c
                 setting_id = f'use_{pid}'
                 is_enabled = ADDON.getSetting(setting_id)
                 if is_enabled == '' and pid == 'flixer': is_enabled = 'true'
-                # Executăm dacă (e Debrid) SAU (Master HTTP e On și setarea individuală e On) SAU (P2P)
-                if pid in debrid_providers or (http_master_enabled and pid not in p2p_providers and is_enabled == 'true') or (pid in p2p_providers and p2p_master_enabled and is_enabled == 'true'):
+                # Debrid/Stremio providers bypass the HTTP master switch, but
+                # they must still be individually enabled.  Previously every
+                # disabled or unconfigured manifest was called, creating a
+                # flood of avoidable connection errors on every scrape.
+                if ((pid in debrid_providers and is_enabled == 'true') or
+                        (http_master_enabled and pid not in p2p_providers and is_enabled == 'true') or
+                        (pid in p2p_providers and p2p_master_enabled and is_enabled == 'true')):
                     if pid.startswith('custom') or pid.startswith('p2p_custom'):
                         display_name = ADDON.getSetting(f'{pid}_name') or providers_map[pid][0]
                     else:
@@ -7078,7 +7083,9 @@ def get_stream_data(imdb_id, content_type, season=None, episode=None, progress_c
             setting_id = f'use_{pid}'
             is_enabled = ADDON.getSetting(setting_id)
             if is_enabled == '' and pid == 'flixer': is_enabled = 'true'
-            if pid in debrid_providers or (http_master_enabled and pid not in p2p_providers and is_enabled == 'true') or (pid in p2p_providers and p2p_master_enabled and is_enabled == 'true'):
+            if ((pid in debrid_providers and is_enabled == 'true') or
+                    (http_master_enabled and pid not in p2p_providers and is_enabled == 'true') or
+                    (pid in p2p_providers and p2p_master_enabled and is_enabled == 'true')):
                 if pid.startswith('custom') or pid.startswith('p2p_custom'):
                     display_name = ADDON.getSetting(f'{pid}_name') or pname
                 else:

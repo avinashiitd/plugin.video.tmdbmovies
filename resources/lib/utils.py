@@ -128,12 +128,14 @@ def get_json(url):
         import urllib3
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         
-        # Reduced timeout: If TMDb doesn't respond in 5 sec, cut the connection
-        # This prevents the "waiting on thread" message
-        r = SESSION.get(url, headers=get_headers(), timeout=5, verify=False)
+        r = SESSION.get(url, headers=get_headers(), timeout=10, verify=True)
+        if r.status_code != 200:
+            log(f"[TMDB] get_json HTTP {r.status_code}: {url[:120]}", xbmc.LOGERROR)
+            return {}
         r.raise_for_status()
         return r.json()
-    except:
+    except Exception as e:
+        log(f"[TMDB] get_json failed: {e}", xbmc.LOGERROR)
         return {}
 
 def paginate_list(item_list, page, limit=20):

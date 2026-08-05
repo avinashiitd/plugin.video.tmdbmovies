@@ -7,7 +7,9 @@ if addon_root not in sys.path:
     sys.path.insert(0, addon_root)
 
 if __name__ == '__main__':
-    from entry import run_plugin
+    # Kodi can execute this file with either the addon root or this directory
+    # on sys.path.  The package import works reliably in both cases.
+    from resources.lib.entry import run_plugin
     run_plugin()
     # RLI fix: prevent stale interpreter when container changes to another addon
     try:
