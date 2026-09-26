@@ -17,7 +17,12 @@ Kodi video addon for browsing movies and TV shows via TMDb, with HTTP stream sup
 
 ## Install
 
-Install as a Kodi addon by placing this folder in your Kodi addons directory, or zip and install via Kodi's "Install from zip file".
+1. Download the latest `plugin.video.tmdbmovies-<version>.zip` from the [Releases page](https://github.com/avinashiitd/plugin.video.tmdbmovies/releases/latest).
+2. In Kodi, go to *Settings → Add-ons → Install from zip file* and select the downloaded zip.
+   (Enable *Unknown sources* under *Settings → System → Add-ons* first if prompted.)
+3. Install the dependencies listed above if Kodi does not resolve them automatically.
+
+Releases are built automatically by GitHub Actions whenever the version in `addon.xml` changes on `main`.
 
 ## Upstream
 
