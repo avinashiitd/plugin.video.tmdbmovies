@@ -1,3 +1,10 @@
+1.1.205
+- Fix movies and TV shows with the same TMDb ID sharing cached metadata (wrong poster/plot)
+- Fix debug logging toggle not applying on settings change
+- Fix MDBList "new episode" flag never showing
+- Fix error when clearing sources cache fails
+- Remove leftover WAL files when a cache database is reset
+
 1.1.204
 - Improved library reverse sync performance (to Trakt)
 
