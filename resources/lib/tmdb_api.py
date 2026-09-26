@@ -135,7 +135,7 @@ def prefetch_metadata_parallel(items, media_type):
     
     import threading, time, requests
     from resources.lib.config import BASE_URL, API_KEY, get_headers, get_plot_language, get_plot_language_code, get_plot_img_lang
-    from resources.lib.cache import ram_pool_set, ram_cache_set_tvshow
+    from resources.lib.cache import ram_pool_set, ram_cache_set_item
     
     current_lang = get_plot_language_code()
     url_lang = get_plot_language()
@@ -158,9 +158,8 @@ def prefetch_metadata_parallel(items, media_type):
                 data = res.json()
                 data['_cached_lang'] = current_lang
                 data['_lightweight'] = True
-                ram_pool_set(str(tid), data)
-                if m_type != 'movie':
-                    ram_cache_set_tvshow(tid, data)
+                ram_pool_set(tid, m_type, data)
+                ram_cache_set_item(tid, m_type, data)
         except:
             pass
     
@@ -4579,7 +4578,7 @@ def _get_cached_details(tmdb_id, content_type):
     from resources.lib.config import get_plot_language_code
     current_lang = get_plot_language_code()
     from resources.lib.cache import ram_pool_get
-    pool_data = ram_pool_get(str_id)
+    pool_data = ram_pool_get(str_id, content_type)
     if pool_data and pool_data.get('_cached_lang') == current_lang:
         return pool_data
     from resources.lib import trakt_sync
@@ -4597,18 +4596,18 @@ def get_tmdb_item_details(tmdb_id, content_type, lightweight=False):
     from resources.lib.config import get_plot_language_code
     current_lang = get_plot_language_code()
     
-    from resources.lib.cache import ram_cache_get_tvshow, ram_cache_set_tvshow, ram_pool_get, ram_pool_set
+    from resources.lib.cache import ram_cache_get_item, ram_cache_set_item, ram_pool_get, ram_pool_set
     # 1. Check global RAM pool — skip if language doesn't match
-    pool_data = ram_pool_get(str_id)
+    pool_data = ram_pool_get(str_id, content_type)
     if pool_data and pool_data.get('_cached_lang') == current_lang:
         if lightweight or not pool_data.get('_lightweight'):
             return pool_data
     
     # 2. Check Window Properties RAM cache — skip if language doesn't match
-    ram_data = ram_cache_get_tvshow(str_id)
+    ram_data = ram_cache_get_item(str_id, content_type)
     if ram_data and ram_data.get('_cached_lang') == current_lang:
         if lightweight or not ram_data.get('_lightweight'):
-            ram_pool_set(str_id, ram_data)
+            ram_pool_set(str_id, content_type, ram_data)
             return ram_data
     
     from resources.lib.config import ADDON, SESSION, get_headers, get_plot_img_lang, LANG_TO_TMDB
@@ -4618,8 +4617,8 @@ def get_tmdb_item_details(tmdb_id, content_type, lightweight=False):
     if data:
         cached_lang = data.get('_cached_lang', 'en')
         if cached_lang == current_lang:
-            ram_pool_set(str_id, data)
-            ram_cache_set_tvshow(str_id, data)
+            ram_pool_set(str_id, content_type, data)
+            ram_cache_set_item(str_id, content_type, data)
             return data
     
     append = "external_ids,images,content_ratings,release_dates" if lightweight else "credits,videos,external_ids,images,content_ratings,release_dates"
@@ -4683,8 +4682,8 @@ def get_tmdb_item_details(tmdb_id, content_type, lightweight=False):
                     
                 data['_cached_lang'] = current_lang
         
-        ram_pool_set(str_id, data)
-        ram_cache_set_tvshow(tmdb_id, data)
+        ram_pool_set(str_id, content_type, data)
+        ram_cache_set_item(str_id, content_type, data)
         if not lightweight:
             conn = trakt_sync.get_connection()
             trakt_sync.set_tmdb_item_details_to_db(conn.cursor(), tmdb_id, content_type, data)
@@ -5861,10 +5860,6 @@ def get_next_episodes(params=None):
     xbmcplugin.setContent(HANDLE, 'episodes')
     xbmcplugin.endOfDirectory(HANDLE, cacheToDisc=True)
     set_fast_cache(cache_key, cache_list)
-    try:
-        season_session.close()
-    except:
-        pass
 
 
 # FOR SEREN

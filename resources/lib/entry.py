@@ -994,7 +994,7 @@ def run_plugin():
                     False
                 )
             except Exception as e:
-                log(f"[CACHE] Error clearing cache: {e}", xbmc.LOGERROR)
+                xbmc.log(f"[TMDb Movies] [CACHE] Error clearing cache: {e}", xbmc.LOGERROR)
             
         elif ret == 1:
             try:
@@ -1009,7 +1009,7 @@ def run_plugin():
                     False
                 )
             except Exception as e:
-                log(f"[CACHE] Error clearing cache full: {e}", xbmc.LOGERROR)
+                xbmc.log(f"[TMDb Movies] [CACHE] Error clearing cache full: {e}", xbmc.LOGERROR)
             
         return
 
@@ -1094,17 +1094,16 @@ def run_service():
                 clear_settings_cache()
             except:
                 pass
-        try:
-            from resources.lib.utils import reset_debug_cache
-            reset_debug_cache()
-        except:
-            pass
-        
-        try:
-            from resources.lib.scrapers import reset_debug_cache as reset_scrapers_debug
-            reset_scrapers_debug()
-        except:
-            pass
+            try:
+                from resources.lib.utils import reset_debug_cache
+                reset_debug_cache()
+            except:
+                pass
+            try:
+                from resources.lib.scraper import reset_debug_cache as reset_scraper_debug
+                reset_scraper_debug()
+            except:
+                pass
 
         def update_context_menu_property(self):
             window = xbmcgui.Window(10000)
@@ -1157,7 +1156,7 @@ def run_service():
             
             # Prefetch popular metadata into RAM for instant browsing
             try:
-                from resources.lib.cache import _ensure_ram_cache_ver, ram_cache_get_tvshow, ram_cache_set_tvshow
+                from resources.lib.cache import _ensure_ram_cache_ver, ram_cache_get_item
                 _ensure_ram_cache_ver()
                 from resources.lib import trakt_sync
                 from resources.lib.tmdb_api import get_tmdb_item_details, get_tmdb_movies_standard, get_tmdb_tv_standard
@@ -1172,7 +1171,7 @@ def run_service():
                     if results:
                         for item in results[:20]:
                             tid = str(item.get('id', ''))
-                            if tid and not ram_cache_get_tvshow(tid):
+                            if tid and not ram_cache_get_item(tid, 'tv'):
                                 get_tmdb_item_details(tid, 'tv')
                 # Movies metadata + list cache
                 for action in ('tmdb_movies_trending_week', 'tmdb_movies_popular'):
@@ -1183,7 +1182,7 @@ def run_service():
                     if results:
                         for item in results[:20]:
                             mid = str(item.get('id', ''))
-                            if mid and not ram_cache_get_tvshow(mid):
+                            if mid and not ram_cache_get_item(mid, 'movie'):
                                 get_tmdb_item_details(mid, 'movie')
                 xbmc.log("[TMDb Movies] RAM prefetch complete", xbmc.LOGINFO)
             except Exception as e:

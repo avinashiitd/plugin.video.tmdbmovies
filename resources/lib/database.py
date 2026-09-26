@@ -20,10 +20,13 @@ def connect():
             size_mb = os.path.getsize(DB_FILE) / (1024 * 1024)
             if size_mb > 20:
                 xbmc.log(f"[TMDb Movies] maincache.db is {size_mb:.2f}MB. AUTO RESET!", xbmc.LOGWARNING)
-                try:
-                    xbmcvfs.delete(DB_FILE)
-                except:
-                    os.remove(DB_FILE)
+                # Remove WAL/SHM too, or SQLite may replay a stale WAL onto the fresh DB
+                for path in (DB_FILE, DB_FILE + '-wal', DB_FILE + '-shm'):
+                    try:
+                        xbmcvfs.delete(path)
+                    except:
+                        try: os.remove(path)
+                        except: pass
         except: pass
     # -----------------------------
     

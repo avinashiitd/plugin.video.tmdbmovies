@@ -254,11 +254,21 @@ def ram_cache_set(tag, key, data, ttl=_RAM_TTL):
     except:
         pass
 
+def _media_tag(media_type):
+    """Movie and TV ids are separate TMDb namespaces — keep them apart in RAM caches."""
+    return 'movie' if media_type == 'movie' else 'tv'
+
+def ram_cache_get_item(tmdb_id, media_type):
+    return ram_cache_get(f'meta_{_media_tag(media_type)}', tmdb_id)
+
+def ram_cache_set_item(tmdb_id, media_type, data, ttl=_RAM_TTL):
+    ram_cache_set(f'meta_{_media_tag(media_type)}', tmdb_id, data, ttl)
+
 def ram_cache_get_tvshow(tmdb_id):
-    return ram_cache_get('tv', tmdb_id)
+    return ram_cache_get_item(tmdb_id, 'tv')
 
 def ram_cache_set_tvshow(tmdb_id, data, ttl=_RAM_TTL):
-    ram_cache_set('tv', tmdb_id, data, ttl)
+    ram_cache_set_item(tmdb_id, 'tv', data, ttl)
 
 def ram_cache_get_season(tmdb_id, season_num):
     return ram_cache_get('season', f'{tmdb_id}_{season_num}')
@@ -280,15 +290,19 @@ def ram_cache_clear_all():
 _RAM_META_POOL = {}
 _RAM_META_POOL_MAX = 500
 
-def ram_pool_get(tmdb_id):
-    """O(1) dict lookup — instant, no serialization."""
-    return _RAM_META_POOL.get(str(tmdb_id))
+def _pool_key(tmdb_id, media_type):
+    return f"{_media_tag(media_type)}_{tmdb_id}"
 
-def ram_pool_set(tmdb_id, data):
+def ram_pool_get(tmdb_id, media_type):
+    """O(1) dict lookup — instant, no serialization."""
+    return _RAM_META_POOL.get(_pool_key(tmdb_id, media_type))
+
+def ram_pool_set(tmdb_id, media_type, data):
     """Store metadata in global pool. Silently skips if pool is full."""
-    if len(_RAM_META_POOL) >= _RAM_META_POOL_MAX:
+    key = _pool_key(tmdb_id, media_type)
+    if key not in _RAM_META_POOL and len(_RAM_META_POOL) >= _RAM_META_POOL_MAX:
         return
-    _RAM_META_POOL[str(tmdb_id)] = data
+    _RAM_META_POOL[key] = data
 
 def ram_pool_clear():
     _RAM_META_POOL.clear()
@@ -313,7 +327,7 @@ def warm_ram_pool_from_db():
                     data = json.loads(zlib.decompress(data_blob))
                 else:
                     data = json.loads(data_blob)
-                _RAM_META_POOL[str(tmdb_id)] = data
+                _RAM_META_POOL[_pool_key(tmdb_id, media_type)] = data
                 count += 1
             except:
                 pass
