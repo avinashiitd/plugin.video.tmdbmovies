@@ -6,6 +6,7 @@ MDBList integration adapted for TMDb Movies (API Key Only + Custom Icons/Colors)
 import sys
 import os
 import urllib.parse
+from datetime import datetime, timezone, timedelta
 import requests
 import xbmcgui
 import xbmcplugin
@@ -536,6 +537,8 @@ def _view_upnext(page=1):
         if air_date_str:
             try:
                 air_date = datetime.fromisoformat(air_date_str.replace('Z', '+00:00'))
+                if air_date.tzinfo is None:
+                    air_date = air_date.replace(tzinfo=timezone.utc)
                 cutoff   = datetime.now(timezone.utc) - timedelta(days=new_days)
                 is_new   = air_date >= cutoff
             except: pass

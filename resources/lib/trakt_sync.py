@@ -97,10 +97,12 @@ def get_connection():
             size_mb = os.path.getsize(DB_PATH) / (1024 * 1024)
             if size_mb > 50: # Limita 50MB
                 log(f"[DB-PROTECT] trakt_sync.db is {size_mb:.2f}MB. AUTO RESET!", xbmc.LOGWARNING)
-                try: xbmcvfs.delete(DB_PATH)
-                except:
-                    try: os.remove(DB_PATH)
-                    except: pass
+                # Remove WAL/SHM too, or SQLite may replay a stale WAL onto the fresh DB
+                for path in (DB_PATH, DB_PATH + '-wal', DB_PATH + '-shm'):
+                    try: xbmcvfs.delete(path)
+                    except:
+                        try: os.remove(path)
+                        except: pass
                 # Notificare discretă
                 try:
                     xbmcgui.Dialog().notification("[B][COLOR FF00CED1]TMDb [COLOR FFCCCCFF]Movies[/COLOR][/B]", "Cache Reset (Size Limit)", os.path.join(ADDON.getAddonInfo('path'), 'icon.png'))
