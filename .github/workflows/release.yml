@@ -1,0 +1,61 @@
+name: Release
+
+# Builds the installable Kodi zip and publishes a GitHub Release whenever
+# the version in addon.xml changes on main (skips if the tag already exists).
+on:
+  push:
+    branches: [main]
+    paths: [addon.xml, .github/workflows/release.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read addon id and version
+        id: meta
+        run: |
+          id=$(sed -n 's/.*<addon[^>]* id="\([^"]*\)".*/\1/p' addon.xml | head -1)
+          version=$(sed -n 's/.*<addon[^>]* version="\([^"]*\)".*/\1/p' addon.xml | head -1)
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          if git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build zip
+        if: steps.meta.outputs.exists == 'false'
+        run: |
+          mkdir -p dist
+          git archive --format=zip --prefix="${{ steps.meta.outputs.id }}/" \
+            -o "dist/${{ steps.meta.outputs.id }}-${{ steps.meta.outputs.version }}.zip" HEAD
+
+      - name: Extract release notes from changelog.txt
+        if: steps.meta.outputs.exists == 'false'
+        run: |
+          awk -v v="${{ steps.meta.outputs.version }}" '
+            $0 == v {found=1; next}
+            found && /^[0-9]+\.[0-9]+/ {exit}
+            found {print}
+          ' changelog.txt > notes.md
+          [ -s notes.md ] || echo "Release ${{ steps.meta.outputs.version }}" > notes.md
+
+      - name: Create GitHub release
+        if: steps.meta.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.meta.outputs.tag }}" dist/*.zip \
+            --target "$GITHUB_SHA" \
+            --title "TMDb Movies ${{ steps.meta.outputs.version }}" \
+            --notes-file notes.md
