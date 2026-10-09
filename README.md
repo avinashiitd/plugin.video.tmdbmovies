@@ -1,106 +1,77 @@
 # TMDb Movies (Kodi Addon)
 
-Fork of the **TMDb Movies** addon from [angelitto2005/repository.angelitto](https://github.com/angelitto2005/repository.angelitto).
-Original author: Angelitto.
+Fork of **TMDb Movies** by Angelitto ([angelitto2005/repository.angelitto](https://github.com/angelitto2005/repository.angelitto)), kept in sync with upstream plus extra bug fixes (see `changelog.txt`).
 
-Kodi video addon for browsing movies and TV shows via TMDb, with stream support through providers such as AIO Streams, Torrentio, MediaFusion, Comet, Meteor, debrid services, and P2P via TorrServer. Optional Trakt, TMDb account and MDBList integration.
+Kodi video addon for browsing movies and TV shows via TMDb, with streams from 20+ HTTP sites, AIO Streams and Stremio addons (Torrentio, MediaFusion, Comet, Meteor, StremThru, Usenet), debrid clouds, and P2P via TorrServer. Optional Trakt / Simkl / MDBList / TMDb account integration.
 
-> This addon is a search front end. It does not host any content, and most sources need your own provider configuration (see [First-time setup](#first-time-setup)).
+> This addon is a search front end. It does not host any content.
 
 ---
 
-## Requirements
+## Install (from the repository — recommended)
 
-| Item | Notes |
+Install through the addon repository, **not** from a raw source zip. The repository installs every dependency automatically and keeps the addon updated.
+
+Tested by upstream on **Kodi 20 Nexus, 21 Omega and 22 Piers** (Windows, macOS, Linux, Android, LibreELEC/CoreELEC, Fire TV). Kodi 19 Matrix may work but is not tested.
+
+### 1. Allow unknown sources
+**Settings → System → Add-ons → Unknown sources → On** (confirm the warning).
+
+### 2. Add the repository source
+**Settings → File manager → Add source → `<None>`** and type exactly:
+```
+https://avinashiitd.github.io/plugin.video.tmdbmovies/
+```
+Name it `tmdbmovies` and press **OK**.
+
+### 3. Install the repository
+**Settings → Add-ons → Install from zip file → `tmdbmovies` → `repository.avinashiitd-1.0.0.zip`**
+Wait for *"TMDb Movies Repository – Add-on installed"*.
+
+### 4. Install TMDb Movies
+**Settings → Add-ons → Install from repository → TMDb Movies Repository → Video add-ons → TMDb Movies → Install**.
+Kodi shows the list of dependencies it will install – press **OK**.
+
+The addon now appears under **Add-ons → Video add-ons**, and updates arrive automatically.
+
+### What gets installed automatically
+
+| Dependency | Comes from |
 |---|---|
-| Kodi 19 (Matrix) or newer | Kodi 20 Nexus / 21 Omega are recommended. Kodi 18 and older are **not** supported (Python 2). |
-| `script.module.requests` | In the official Kodi repository, installed automatically. |
-| `inputstream.adaptive` | In the official Kodi repository on Windows, macOS, Android and LibreELEC/CoreELEC. On desktop Linux it is a system package (see below). |
-| `script.module.resolveurl` | **Not** in the official Kodi repository. You must add a repository that provides it **before** installing this addon, otherwise Kodi reports *"Dependencies not met"*. |
+| `script.module.resolveurl` (+ `six`, `kodi-six`, `pyqrcode`) | ResolveURL repository (included in our repository's sources) |
+| `script.module.requests` | Official Kodi repository |
+| `inputstream.adaptive` | Official Kodi repository |
 
----
-
-## Installation
-
-### Step 1 – Allow unknown sources
-
-1. Kodi → **Settings** (gear icon) → **System** → **Add-ons**.
-2. Turn on **Unknown sources** and confirm the warning.
-
-### Step 2 – Install the dependencies Kodi cannot find on its own
-
-**ResolveURL** (required):
-Install a repository that hosts `script.module.resolveurl` — for example the upstream [Angelitto repository](https://github.com/angelitto2005/repository.angelitto) or the official [ResolveURL](https://github.com/Gujal00/ResolveURL) repository — then:
-**Add-ons → Install from repository → *that repository* → Program add-ons → ResolveURL → Install**.
-
-**InputStream Adaptive** on desktop Linux (Ubuntu/Debian with the Kodi PPA, Fedora, Arch …):
+**Exception – desktop Linux** (Ubuntu/Debian/Fedora/Arch Kodi packages): `inputstream.adaptive` is a system package there. Install it before step 4, then enable it under **Add-ons → My add-ons → VideoPlayer InputStream → InputStream Adaptive**:
 ```bash
 sudo apt install kodi-inputstream-adaptive      # Debian / Ubuntu
 sudo dnf install kodi-inputstream-adaptive      # Fedora (RPM Fusion)
 sudo pacman -S kodi-addon-inputstream-adaptive  # Arch
 ```
-Then in Kodi: **Add-ons → My add-ons → VideoPlayer InputStream → InputStream Adaptive → Enable**.
-On every other platform Kodi installs it automatically.
+LibreELEC, CoreELEC, Windows, macOS and Android need nothing extra.
 
-### Step 3 – Build the zip
+### Optional companions
 
-Kodi requires the zip to contain **one top-level folder named exactly `plugin.video.tmdbmovies`**.
-GitHub's green *Code → Download ZIP* button creates a folder like `plugin.video.tmdbmovies-main`, which Kodi rejects with *"Invalid structure"* or *"Failed to install"*. Build the zip one of these ways instead:
-
-**With git (Linux / macOS / Windows Git Bash):**
-```bash
-git clone https://github.com/avinashiitd/plugin.video.tmdbmovies.git
-cd plugin.video.tmdbmovies
-git archive --format=zip --prefix=plugin.video.tmdbmovies/ -o ../plugin.video.tmdbmovies.zip HEAD
-```
-
-**Without git:**
-1. Download the ZIP from GitHub and extract it.
-2. Rename the extracted folder to `plugin.video.tmdbmovies` (it must contain `addon.xml` directly inside it).
-3. Right-click that folder → *Compress / Send to → Compressed (zipped) folder*.
-4. Confirm that opening the zip shows `plugin.video.tmdbmovies/addon.xml`, not `addon.xml` at the root and not a second nested folder.
-
-### Step 4 – Install from zip
-
-1. Copy `plugin.video.tmdbmovies.zip` to a location Kodi can browse (USB stick, Downloads folder, network share).
-2. Kodi → **Add-ons** → open-box icon (top left) → **Install from zip file**.
-3. Select the zip. Wait for *"TMDb Movies – Add-on installed"*.
-4. The addon appears under **Add-ons → Video add-ons**.
-
-### Alternative – manual copy (developers)
-
-Copy or symlink the repository folder (named `plugin.video.tmdbmovies`) into Kodi's addons directory, then restart Kodi and enable it under **Add-ons → My add-ons → Video add-ons**.
-
-| Platform | Addons directory |
+| For | Install |
 |---|---|
-| Windows | `%APPDATA%\Kodi\addons\` |
-| Linux | `~/.kodi/addons/` |
-| macOS | `~/Library/Application Support/Kodi/addons/` |
-| Android | `Android/data/org.xbmc.kodi/files/.kodi/addons/` |
-| LibreELEC / CoreELEC | `/storage/.kodi/addons/` |
+| Trailers | The default trailer player is *TMDbM Trailers*, which is not included here. Either install **YouTube** from the official Kodi repository and set **Settings → Menu → Play trailers with → YouTube Plugin**, or install *TMDbM Trailers* from the Angelitto repository. |
+| P2P sources | A running [TorrServer](https://github.com/YouROK/TorrServer) (default `127.0.0.1:8090`). |
 
-Dependencies are **not** installed automatically with this method; install them first (Step 2, plus `script.module.requests` from the official repository).
-
-### Updating
-
-Build a new zip from the latest code and use **Install from zip file** again; Kodi upgrades in place and keeps your settings. Settings and caches live in `userdata/addon_data/plugin.video.tmdbmovies/`.
+> **Don't also install TMDb Movies from the Angelitto repository.** Kodi always picks the highest version across repositories, so the next upstream release would replace this fork. If that already happened: uninstall TMDb Movies, then reinstall it from *TMDb Movies Repository*.
 
 ---
 
 ## First-time setup
 
-Browsing (TMDb lists, search, info dialogs) works immediately. **Playing** something requires at least one source provider. Open the addon settings (select the addon → *Configure*, or long-press/right-click → *Settings*):
+Browsing works immediately. **Playing** needs at least one source. Open the addon settings (long-press / right-click TMDb Movies → *Settings*):
 
-1. **AIO Streams** tab – enabled by default. Pick an instance, configure it on that instance's website, and paste your **UUID** and **password** into the matching fields. Without them, AIO Streams returns no results.
-2. **Debrid Sources** tab (Torrentio, MediaFusion, Comet, Meteor, custom) – enable a provider, open its *Configure URL* in a browser, set up your debrid service there, then paste the generated **`manifest.json` URL** into the addon.
-3. **P2P Providers** tab (optional) – needs a running [TorrServer](https://github.com/YouROK/TorrServer) (default `127.0.0.1:8090`). Private trackers (FileList, SpeedApp) need your own credentials/passkey.
-4. **HTTP Providers** tab – free HTTP scrapers; toggle them on or off individually.
-5. **Accounts** tab (optional):
-   - *Connect Trakt* – shows a code; enter it at trakt.tv/activate. Enables watched sync, Next Episodes, lists and ratings.
-   - *Connect TMDb* – enables TMDb watchlist/favorites/lists.
-   - *MDBList API Key* – get a free key at mdblist.com to use MDBList lists.
-6. **Subtitles** tab (optional) – enable subtitle search and set languages (default `ro`; change to e.g. `en`).
-7. **General → Plot** – the default language is `enro` (English + Romanian). Set it to `en` for English-only plots and artwork.
+1. **HTTP Providers** – free sites, on by default; toggle individual sites here.
+2. **AIO Streams** – choose an instance, configure it on that instance's website, then paste your **UUID** and **password**.
+3. **Stremio** (Torrentio, MediaFusion, Comet, Meteor, StremThru, Usenet, custom) – enable a provider, open its *Configure* page in a browser, connect your debrid service, then paste the generated **`manifest.json` URL**.
+4. **P2P Providers** – point it at your TorrServer; private trackers (FileList, SpeedApp, SeedPool) need your own credentials.
+5. **Accounts** (optional) – *Connect Trakt* shows a code / QR to enter at trakt.tv/activate. Simkl, TMDb and MDBList can be connected here too.
+6. **My Debrid Cloud** (optional) – Real-Debrid, TorBox, Premiumize, Offcloud cloud browsing.
+7. **General → Language** – default `enro` (English + Romanian); set `en` for English-only plots and artwork. **Subtitles → Languages** defaults to `ro`; change to e.g. `en`.
 
 ---
 
@@ -108,18 +79,26 @@ Browsing (TMDb lists, search, info dialogs) works immediately. **Playing** somet
 
 | Symptom | Fix |
 |---|---|
-| *"Dependencies not met"* / *"Could not connect to repository"* | ResolveURL or InputStream Adaptive is missing – do Step 2 first. |
-| *"Invalid structure"* / *"Failed to install"* from zip | The zip root is wrong – rebuild it as in Step 3. |
-| Addon doesn't appear in Video add-ons after manual copy | The folder must be named exactly `plugin.video.tmdbmovies`; restart Kodi and check **My add-ons → Video add-ons** (it may be disabled). |
-| *"No sources found"* | No provider is configured – see [First-time setup](#first-time-setup). Try increasing **HTTP Providers → Max source wait time**. |
+| Source shows no files in step 3 | Check the URL ends with `/` and has no typos; open it in a browser – it must list `repository.avinashiitd-1.0.0.zip`. |
+| *"Dependencies not met"* / *"Could not connect to repository"* | Check internet access, then **Add-ons → My add-ons → Add-on repository → TMDb Movies Repository → Update** and retry. On desktop Linux, install `inputstream.adaptive` as above. |
+| Stream starts with no video / playback error | Make sure **InputStream Adaptive** is installed **and enabled**. |
+| *"No sources found"* | Configure a provider (see [First-time setup](#first-time-setup)); raise **HTTP Providers → Max source wait time**. |
 | Stale or wrong results | **Maintenance → Delete All Cache**, or long-press an item → clear sources cache. |
-| Stream plays with no video / errors on start | Make sure InputStream Adaptive is installed **and enabled**. |
-| Anything else | Make sure **Maintenance → Enable Detailed Logging** is on (it is by default), reproduce the problem, then use **Upload Kodi Log** and open an issue with the link. The log lines are prefixed with the addon name. |
+| Addon reverted to upstream version | See the note under [Optional companions](#optional-companions). |
+| Anything else | Keep **Maintenance → Enable Detailed Logging** on (default), reproduce the problem, use **Upload Kodi Log to Pastebin**, and open an issue with the link. |
 
-Kodi log locations: Windows `%APPDATA%\Kodi\kodi.log`, Linux `~/.kodi/temp/kodi.log`, macOS `~/Library/Logs/kodi.log`, Android `Android/data/org.xbmc.kodi/files/.kodi/temp/kodi.log`.
+Kodi log locations: Windows `%APPDATA%\Kodi\kodi.log` · Linux `~/.kodi/temp/kodi.log` · macOS `~/Library/Logs/kodi.log` · Android `Android/data/org.xbmc.kodi/files/.kodi/temp/kodi.log`.
 
 ---
 
-## Upstream
+## For maintainers
 
-Source extracted from: https://github.com/angelitto2005/repository.angelitto/tree/main/all/plugin.video.tmdbmovies
+The Kodi repository is built and published by GitHub Actions (`.github/workflows/publish-kodi-repo.yml`) on every push to `main`:
+
+- `kodi-repo/build.py` zips the addon (tracked files only; `.github/`, `kodi-repo/` and `README.md` are excluded) and the repository addon, then writes `zips/addons.xml`, `addons.xml.md5` and an `index.html` into `_site/`, which is deployed to GitHub Pages.
+- `kodi-repo/repository.avinashiitd/addon.xml` points Kodi at this site **and** at the ResolveURL repository, so the `script.module.resolveurl` dependency always resolves.
+- **One-time setup:** repository **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+- **Releasing:** bump `version` in `addon.xml` (and add a `changelog.txt` entry), then merge to `main`. Kodi only offers the update when the version increases. Fork releases add a fourth number to the upstream version (e.g. `1.1.310.1`) so they rank above that upstream release.
+- **Local build:** `python3 kodi-repo/build.py` (output in `_site/`).
+
+Upstream source: https://github.com/angelitto2005/repository.angelitto/tree/main/all/plugin.video.tmdbmovies

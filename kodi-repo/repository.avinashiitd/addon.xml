@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<addon id="repository.avinashiitd" name="[B][COLOR FF00CED1]TMDb Movies[/COLOR] Repository[/B]" version="1.0.0" provider-name="avinashiitd">
+    <extension point="xbmc.addon.repository" name="TMDb Movies Repository">
+        <dir>
+            <info compressed="false">https://avinashiitd.github.io/plugin.video.tmdbmovies/zips/addons.xml</info>
+            <checksum>https://avinashiitd.github.io/plugin.video.tmdbmovies/zips/addons.xml.md5</checksum>
+            <datadir zip="true">https://avinashiitd.github.io/plugin.video.tmdbmovies/zips/</datadir>
+        </dir>
+        <!-- ResolveURL (required by TMDb Movies) is not in the official Kodi repository -->
+        <dir>
+            <info compressed="false">https://raw.githubusercontent.com/Gujal00/smrzips/master/addons.xml</info>
+            <checksum>https://raw.githubusercontent.com/Gujal00/smrzips/master/addons.xml.md5</checksum>
+            <datadir zip="true">https://raw.githubusercontent.com/Gujal00/smrzips/master/zips/</datadir>
+        </dir>
+    </extension>
+    <extension point="xbmc.addon.metadata">
+        <summary lang="en_GB">TMDb Movies and its dependencies</summary>
+        <description lang="en_GB">Installs and updates TMDb Movies (avinashiitd fork) and ResolveURL.</description>
+        <platform>all</platform>
+        <assets>
+            <icon>icon.png</icon>
+        </assets>
+    </extension>
+</addon>
