@@ -959,6 +959,7 @@ def run_plugin():
 
     if mode == 'clear_sources_context':
         from resources.lib.cache import MainCache
+        from resources.lib.utils import log
         import os
         
         tmdb_id = params.get('tmdb_id')
@@ -1101,7 +1102,7 @@ def run_service():
             pass
         
         try:
-            from resources.lib.scrapers import reset_debug_cache as reset_scrapers_debug
+            from resources.lib.scraper import reset_debug_cache as reset_scrapers_debug
             reset_scrapers_debug()
         except:
             pass

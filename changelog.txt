@@ -1,3 +1,12 @@
+1.1.205
+- Fix crash in "Clear sources cache" error handling (undefined log)
+- Fix MDBList "new episode" badge never showing (missing datetime import, naive/aware date comparison)
+- Fix scraper debug cache not being reset by the service (wrong module name)
+- Remove reference to undefined season_session in Next Episodes
+- Fix Backup Frequency setting visibility (pointed at the wrong setting)
+- Fix malformed XML comments in info dialog skins
+- Add full installation, setup and troubleshooting guide to README
+
 1.1.204
 - Improved library reverse sync performance (to Trakt)
 

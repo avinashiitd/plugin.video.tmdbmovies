@@ -5861,10 +5861,6 @@ def get_next_episodes(params=None):
     xbmcplugin.setContent(HANDLE, 'episodes')
     xbmcplugin.endOfDirectory(HANDLE, cacheToDisc=True)
     set_fast_cache(cache_key, cache_list)
-    try:
-        season_session.close()
-    except:
-        pass
 
 
 # FOR SEREN
