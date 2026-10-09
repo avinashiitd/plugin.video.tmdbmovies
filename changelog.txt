@@ -1,11 +1,350 @@
-1.1.205
-- Fix crash in "Clear sources cache" error handling (undefined log)
-- Fix MDBList "new episode" badge never showing (missing datetime import, naive/aware date comparison)
-- Fix scraper debug cache not being reset by the service (wrong module name)
-- Remove reference to undefined season_session in Next Episodes
-- Fix Backup Frequency setting visibility (pointed at the wrong setting)
-- Fix malformed XML comments in info dialog skins
-- Add full installation, setup and troubleshooting guide to README
+1.1.310
+- Fixed TMDbM Trailers autoplay UP Next
+
+1.1.309
+- Fix Speedapp
+- Added Search Detoate in Context Menu
+
+1.1.308
+- Fixed: NetMirror
+- Fixed: VOE links now resolve again
+- Massive internal cleanup
+
+1.1.307
+- New: Set Views (Settings -> Set Views) - save your favourite Kodi view for 7 categories (Main, Movies, TV Shows, Seasons, Episodes, Episode Lists, Cloud / Files) + Reset Views.
+- Fixed My MDBList context menu freeze.
+- Internal cleanup: all cloud code and the Detonate browser, now lives together in resources/lib/cloud/.
+
+1.1.306
+- Auto-Play Next Episode now keeps the source you started on: it prefers the same pack, then the same provider (free-leech kept on FileList/SpeedApp/SeedPool), then the same kind of source, and it never jumps to a different kind or to Dolby Vision unless you started on DV.
+- "Choose Source" in the next-episode prompt now really opens the source list.
+- Fix the setting under General: "Show air time" - the hour is now shown for shows airing today or tomorrow.
+
+1.1.305
+- New setting under Accounts -> Watched Status Provider: "Show me the active provider when the add-on opens" (off by default).
+- Choosing a provider that is not connected now shows a short, colored prompt.
+- Every provider change is confirmed with a notification.
+
+1.1.304
+- New setting under Accounts -> Watched Status Provider: "Warn me if my active provider is not connected" (on by default). Turn it off and the add-on skips the question and switches to Kodi (Local) instead of asking at start - the switch never moves your watched marks to another account on its own. You still get one short notification when it does switch.
+- New installs start on Kodi (Local), fully offline: mark watched from the add-on, Up Next / In Progress fill from local data, no account or library needed.
+- Premiumize.me and Offcloud added to My Debrid Cloud. API keys are entered from the directory and validated live.
+- Premiumize now has Cloud Storage and History
+- Sources served through an Offcloud account now show the debrid badge and cached marker in the results window.
+- Auto-play and binge now start only on sources that begin instantly, picked in this order: Usenet, Premiumize, TorBox, Real-Debrid, Offcloud, AllDebrid, EasyNews, then HTTP. P2P is no longer auto-played.
+- New context menu action "Play with source select" on movies and episodes (visible only while auto-play is enabled).
+- New setting under Menu: show or hide Downloads in the main menu.
+- Kodi (Local) is now the first and default entry in Settings -> Accounts -> Active Provider. Existing installs keep their choice, renumbered once in the background.
+- The "active provider is not connected" prompt is now a colored dialog with two choices: reconnect now (QR) or switch to Kodi (Local). Back/Esc switches to Kodi (Local).
+
+1.1.301
+- New My Debrid Cloud directory in the main menu (show/hide from Settings -> Menu): TorBox and Real-Debrid. API keys are entered from the directory and validated live before being saved.
+- Fix a small bug with PunchPlay calendar
+
+1.1.297
+- Optional TMDb watchlist prompt when rating (ask or remove silently).
+- Unified sequential sync (auto/smart/force) with per-provider progress, silent auto-sync, rolling 30-minute window.
+- Auto alternate episode numbering for split-season anime, on/off setting in General tab.
+
+1.1.296
+- Unified sequential sync: Smart Sync, Force Sync and the automatic sync now run all connected providers in order (Local, TMDb, Trakt, MDBList, Simkl, PunchPlay) with one progress dialog colored per provider, one final notification and graceful skipping of disconnected providers; TMDb account sync runs as its own leg, no longer tied to the Trakt/MDBList tokens.
+- TMDb watchlist/favorites are fetched fully before replacing local data - a network drop mid-sync no longer truncates the local mirror (watchlist stuck at a partial count); incomplete fetches retry on the next sync.
+- Rolling 30-minute auto-sync window: any sync (automatic or manual) reschedules the next automatic sync a full 30 minutes later.
+- New "TMDb rating removes from watchlist" setting (Ask every time / Remove without asking): the watchlist-removal prompt can be skipped when rating movies/shows on TMDb. Note: TMDb enforces rated-items-out-of-watchlist server-side, so keeping a rated item in the watchlist is not possible.
+- New watched provider "Kodi (Local)": watch state lives fully offline in the addon (local_sync.db), no account and no re-auth pop-up at startup. Marks sync instantly with the native Kodi library (checkmarks appear/disappear in both places), existing Kodi playcounts are imported at Library Sync, Up Next and In Progress work from local data. Optional extra target under Accounts/Mark as watched on -> Custom selection.
+
+1.1.295
+- Fixed an error when running an import with a disconnected provider
+- PunchPlay Account page now also shows Favourites, Collection and My Lists.
+- PunchPlay Calendar rows now carry the site category colors
+- Added Forge (Fen fork) as an external player for movies and episodes; toggle under Settings -> My Plays.
+
+1.1.294
+PunchPlay
+- Single-episode "Mark Unwatched" deletes only that episode (no more season/show wipe); show-wide unwatch clears all episodes.
+- "Mark Watched" on season/show now reaches PunchPlay (episodes expanded from TMDb).
+- Unwatching an episode/season clears the local "fully watched" flag.
+Calendar
+- Upcoming days setting now offers 0 (past + today only); check day settings after update (positions shifted by one).
+Up Next
+- TMDb Up Next now updates together with the provider list on watched/unwatched marks; no stale episode left in the TMDB row.
+- Episode plots fall back to the stored TMDB overview when TMDb has no data.
+- TMDB pool shows use English titles.
+- PunchPlay: no more "tmdb:" placeholder titles; shows the server marks complete are kept even when TMDb announces future episodes.
+- Up Next / In Progress open fast: list always cached, air time applied at render.
+- Air time lookups cached (known 7d, empty 6h, aired episodes never re-queried).
+- Returning from the player no longer rebuilds Up Next from scratch; rebuild phases logged as [UP NEXT].
+- Row building ~3x faster via bulk SQLite reads.
+- One build at a time: parallel render requests share the fast cache (fixes empty Up Next page).
+- No refresh while a modal dialog (binge/autoplay) is open or the list is already updating.
+
+1.1.293
+PunchPlay
+- PunchPlay is now a fully implemented provider: library sync with watched status, Up Next/In Progress, drop/restore, ratings, watchlist, favourites, collection, lists, calendars and library export.
+- Added My Lists (private/public/dynamic), Collection, Favourites and Public Lists (Movies/TV Shows/Anime catalogs).
+- Added Library export for Watchlist, Favorites, Collection and fixed personal lists.
+- Lists render instantly with background metadata loading and short-lived row caching.
+- Fixed Collection counts, mixed Movie/TV rows, list posters (last added item) and local Collection syncing.
+- Up Next support with instant drop/restore, including Mark Unwatched on fully watched seasons.
+- Fixed resume data for In Progress Movies.
+
+Library & Providers
+- Added Simkl Watchlist export (Movies/TV, Watching + Plan to Watch).
+- Improved Library sync resilience (failed TMDb lookups no longer abort the run).
+- Unified provider identity (colors/icons/titles) across Trakt, MDBList, Simkl, PunchPlay and TMDb; no more hard-coded literals.
+- Provider menu parity: Favourites/Collection/My Lists on episodes, Mark Unwatched on fully watched seasons.
+
+Calendar
+- Upcoming days setting now offers 0 (past + today only).
+- Trakt episodes airing today/tomorrow show the local air time (9pm style).
+- Clear Sources Cache on all provider calendars.
+- Unified sorting, date formatting, click handling and context menus across all providers.
+- Unaired episodes open Extended Info directly; selector changes apply instantly.
+
+Sources
+- New SHOW PACKS ONLY filter for TV results (Fenom-style season and complete-series detection).
+- Fixed HDR/Dolby Vision exclusion
+
+Navigation & Settings
+- Implemented Open Extended Info when selecting (Movies/TV Shows/Episodes selector): click opens the Extended Info page, the previous action moves to the context menu.
+- New Show air time option (requires Trakt): unaired episodes show the local air time in Up Next, In Progress Shows, episode lists and the Trakt calendar.
+- Skip In Progress and Skip Up Next options under Open Extended Info when selecting.
+- Shared context menus on Up Next and In Progress Episodes.
+
+1.1.292
+- Search splash now shows only rows for enabled groups (AIO / HTTP / P2P) - disabled groups are hidden instead of showing 0 results.
+- Personal lists (watchlist, favorites, collection, custom) can now be ordered Original or A-Z via Settings > General > Personal lists order, applied globally before pagination.
+- Instant binge dialog and Up Next refresh after stop, no more spinner blocking input
+- Split the HDR/Dolby Vision exclusion into two separate switches (Exclude DV / Exclude HDR) in Settings and in the sources filter menu
+
+1.1.290
+- Reworked provider imports into a 3-step picker (what to import, direction, run) and added Ratings and Dropped TV Shows transfers between Trakt, MDBList and Simkl
+
+1.1.288
+- Fixed trailer OSD (duplicate tagline, wrong season/episode plot) and colored Season/SxxExx labels in TMDb Info dialog
+- Added history to YouTube search
+
+1.1.287
+- Trakt auth now recovers cleanly from expired logins with clearer logging
+
+1.1.286
+- Update hardening: mixed old/new files during an addon update no longer throw import errors — affected lists temporarily fall back to previous behavior until extraction finishes
+- Added YouTube search option with support for autoplaying suggested videos
+
+1.1.285
+- Premiere and Up Next labels now follow the language setting, and TMDB calendar movie dates match trending (generic release date first).
+
+1.1.284
+- After an addon update resets the manifest, a delayed Yes/No dialog now offers to reload the profile to re-apply your saved Reuse Language Invoker choice (Reload now / Later), replacing the restart request.
+
+1.1.283
+- Added "Date format" setting (European dd.mm.yyyy / US mm/dd/yyyy) applied to all air-date and premiere displays across calendars, Up Next, lists and Extended Info.
+- Air dates from Trakt are now converted from UTC to your local day using the device timezone (Auto, DST-aware) with an optional manual UTC offset override for boxes with a wrong system clock.
+- Fixed TMDB and Simkl calendars showing the show plot on every episode — each calendar episode now shows its own plot (as Trakt/MDBList already did), falling back to the show plot when the episode has none yet.
+
+1.1.282
+- Fixed Browse Show / Browse Season doing nothing from Home widgets
+- Added optional "Flatten single-season shows" setting (default off)
+- Improved trailer loading in Extended Info.
+
+1.1.279
+- Added optional "Show Specials (Season 0)" setting (TV Shows Settings, default off) — when enabled, a "Specials" folder appears first in the season list with its episodes
+
+1.1.278
+- Added Reuse Language Invoker toggle (Settings → Performance) with auto profile reload
+- Fixed empty listings on Kodinerds Android builds: isolated per-item errors so one bad item no longer kills the whole list
+- Individual provider menus (Trakt/TMDb/MDBList/Simkl) now offer Remove rating next to Rate on movies, shows and episodes, with TMDb show rating re-enabled behind a watchlist-removal confirmation shown before the rating dialog
+
+1.1.276
+- Fix crash on Kodi 22 when playing from skin widgets
+
+1.1.275
+- Removed Simkl episode ratings on all paths (menu, post-watch, All Providers), Simkl has no episode-level rating, so episode ratings were silently landing on the whole show; movies and whole shows are unaffected
+- Kodi log upload now lets you choose between kodi.log (active) and kodi.old.log (previous session) before uploading to paste.kodi.tv
+
+1.1.273
+- Post-watch rating can now target Active provider, All providers, or a Custom selection (new toggles per provider in Accounts)
+- Post-watch rating uses a single dialog showing only the icons of the selected providers, with one rating sent to all of them
+- Mark as Watched/Unwatched can now target Active provider, All providers, or a Custom selection (parallel, with a single combined notification)
+- Root context menu Mark Watched/Unwatched entries show multi-color provider segments matching the Custom selection in All/Custom mode
+- The active provider is always included in watched marking so the UI can never desync from unwise toggle choices
+- Fixed Trakt post-watch ratings hitting the whole show instead of the episode (episode payload now built for tv-type items)
+- Fixed TMDb toggle doing nothing for episodes in multi-provider rating
+- Fixed missing SxxExx label (including Season 0 specials) in the rating dialog for tv-type episodes
+- Fixed TMDb watchlist mirror wrongly dropping shows on episode ratings
+- Widened season/episode patterns to 3+ digits (100+ episode seasons) in library cleanup, TPB filtering, and P2P file matching
+- Multi-provider watched notification restyled with provider colors, matching the All Providers menu
+- Fixed Simkl Watched History missing fully-watched shows
+
+1.1.271
+- Fixed Trakt watchlist sync cut off at 100 items: list endpoints are now fully paginated
+- Fixed Trakt discovery lists repeating the same items across periods; added Most Played and Most Favorited menus
+- Fixed In Progress TV Shows listing unstarted shows; it now shows started shows only
+
+1.1.269
+- Mirrored Real-Debrid's exact filename filters for the WEB RD-only option
+
+1.1.268
+- Fixed Comet cached detection and cleaned up corrupted unicode characters in progress messages and stream parsing patterns
+- Fix some minor visual enhancements
+
+1.1.267
+- Improved release group detection
+
+1.1.266
+- Added StremThru Torz Stremio provider with 3 instances (Midnight / Elfhosted / XYZ)
+- Fixed Meteor
+
+1.1.264
+- Kodi Log viewer: colored file/order picks, Show errors only filter, and Full log vs Last 200 lines option
+
+1.1.262
+- Fixed false "watched" checkmark on unwatched Up Next episodes — stale episode totals are now auto-healed from TMDb.
+- Fixed missing episode counting on Up Next for shows without cached totals.
+- Fixed sync hanging on Android during Up Next computation — database writes are now batched.
+- Sync progress dialog now shows "Playback Progress" and "Up Next" phases instead of freezing on "Personal Lists".
+
+1.1.261
+- Window properties cleanup on stop — player IDs are fully cleared so subtitle addons no longer pick up the previous video.
+
+1.1.260
+- Up Next: extend unstarted watchlist support (introduced for TMDb in v1.1.232) to Trakt/MDBList/Simkl
+- Fix MDBList 7-day and TBA future filtering
+- Fix Trakt DB lock and watchlist history import
+- Unify unstarted red/upcoming colors
+
+1.1.257
+- Added missing Simkl disconnect confirmation dialog
+- Fixed minor indexer display bugs
+
+1.1.255
+- Trailers now pass TMDb context (tmdb_id/dbtype/title/year) from all play paths (context menu, details, episodes, Extended Info, play_trailer), enabling the tmdbm.trailers geo-blocked fallback to auto-switch to an alternate trailer when the original is UNPLAYABLE.
+
+1.1.253
+- Estuary OSD: enrich playback info for DialogVideoInfo (2x Info) - show tagline/genres, resolution, rating stars and duration in header and stream name under plot via VideoInfoTag without skin mod
+- Fix missing taglines in movie/TV lists: prefetch now copies EN tagline when localized tagline is empty, lists show motto (EN+localized) without per-item network fallback
+- Added aditional info to TMDb/Trakt/MDBList/Simkl Accounts
+- Fix correct indexer name display in the source results window and update the P2P Custom Providers color scheme
+
+1.1.248
+- Speed up TMDB Up Next sync by batching watched queries and parallelizing show/season fetches
+- Fix TMDb custom lists ordering when adding items
+
+1.1.247
+- Fixed duplicate movie folders (Library import) on year change (TMDb) and permanently missing .strm files — both now self-repair at next sync.
+- Fixed P2P providers Menu
+- Settings: grouped provider accounts (TMDB/Trakt/MDBList/Simkl) into Providers subfolder
+
+1.1.243
+- Added an optional switch library_mirror_lists (default off) so that when you remove a movie/show from a TMDB/Trakt/MDBList list on the site, the next Library Sync also removes it from your Kodi library.
+
+1.1.240
+- Fixed: Library watched sync screen flicker - watchmarks are now written directly to the Kodi DB in one SQL transaction and appear all at once, instead of per-item JSON-RPC updates
+- Fixed Kodi Log Viewer
+
+1.1.238
+- Fixed a minor bug with Arctic Fuse 3
+
+1.1.237
+- Added SeedPool, a private P2P tracker that works exclusively with TorrServer
+- Fixed several minor bugs
+
+1.1.235
+- Fixed date formatting in the TMDb and Simkl Calendars.
+- Added direct access to the YouTube and TMDbM Trailers settings from the TMDb Movies settings page.
+- Added an “Open Kodi log file” option under Maintenance, allowing you to view both the current and previous Kodi log files.
+- Added ”All Movies” in Detonate section. All years combined.
+
+1.1.234
+- Added a “Detonate” section under Bollywood, providing a source for Bollywood movies
+- Fixed a small bug with MDBList
+
+1.1.233
+- Added configurable Source Priority sorting (10 tier-based presets: HTTP/AIO/Stremio/P2P groups, cached/uncached sub-orders)
+
+1.1.232
+- Added TMDb Calendar — populate the calendar directly from your TMDb Watchlist, including both Movies and TV Shows.
+- Added TMDb UP NEXT (Hybrid) — populate UP NEXT with ”In progress TV Shows” from your active watched provider, plus ”Unstarted TV Shows” from your ”TMDb Watchlist” when the corresponding setting is enabled.
+
+1.1.231
+- Simkl integration: full 3rd watched-status provider (PIN/QR auth, phase-based sync with activity deltas, local mirror DB, Up Next/Next Episodes/In Progress, watchlist with 5 statuses, ratings, dropped, history, My & Public calendar, context menus, settings page), working scrobbler (start/pause/stop, marks watched at ≥85%, resume via saved playback), history & watchlist import both directions (Trakt/MDBList/TMDb)
+- Added new "Menu" settings page with show/hide toggles for main menu items and context menu options
+
+1.1.230
+- Added single import selector (Settings -> Accounts) with 14 options: watched history Trakt<->MDBList, plus Movies/TV Shows watchlist imports between all 3 providers (Trakt/MDBList/TMDb)
+
+1.1.229
+- Improved All Providers context menu & notifications
+
+1.1.228
+- Fixed duplicate episodes in library sync: stale `.strm` variants and orphaned episode files are now cleaned, keeping exactly one file per episode.
+
+1.1.227
+- Fixed AF3 resume markers: Delete Resume now instantly refreshes episode containers and clears markers from widgets and season lists
+- Fixed native AF3 resume dialog: choosing "Resume" now actually resumes from the saved position
+- Added "Refresh Widgets After Sync" option to refresh Home widgets automatically after each scheduled sync
+
+1.1.224
+- Add "Verify AIO/Stremio links (fail fast)" option for skipping dead sources instantly instead of waiting for Kodi timeouts.
+- Progress dialog messages now fit in 2 rows on Arctic Fuse 3
+
+1.1.223
+- Trakt calendar: filter out S00 specials episodes from show/mixed calendars 
+
+1.1.222
+- Public Trakt lists now show TMDb posters and real durations, with batched metadata fetching for better speed and rate-limit protection
+- Library export now shows correct item counts for TMDb and Trakt watchlists/favorites and personal lists
+- MDBList added to Library export picker (watchlist, favorites, personal lists) exporting to Kodi Library/MDB Lists/
+- MDB Collection renamed to MDB Favorites.
+- Library auto-sync now respects the configured interval, correctly supporting daily (24h) and weekly (168h) syncs with startup catch-up
+- Fixed Extended Info deep scan crash: SeasonInfo has no attribute media_type
+- Added an “All Providers” context menu for movies, shows, seasons, episodes, and Extended Info, syncing Watchlist/Favorites/Rating and Watched/Unwatched across connected providers.
+- Added episode/season context menus + batch rating dialog
+
+1.1.219
+- Up Next instantly reflects local watched marks made mid-sync, instead of waiting for the next sync to rebuild the list
+- Up Next list no longer drops a show from view while a sync is still in progress
+- Skip-intro dialog now appears only once the video is actually rendering
+- Playback startup grace period extended to 30s, preventing premature source rollover while Kodi is still opening a slow stream
+
+1.1.218
+- Fix Calendar past days
+
+1.1.217
+- Minor fixes and reorganized some directories.
+
+1.1.216
+- New implementation: Skip Intro Dialog
+
+1.1.213
+- MDB Calendar improvements — movies, localized plots, release-aware click actions, date formatting, sort options, and watchlist-synced cache
+
+1.1.212
+- Fix hdhub4u and moviesdrive
+- Fix a small bug with MDBList
+
+1.1.209
+- Up Next: fixed the 7-day grouping error and TBA (no air date) episodes handling for upcoming releases (MDBList)
+- Added QR code authorization for Trakt, TMDb and MDBList
+- TMDb login refactored: replaced user/pass + v4 authentication with QR code / link activation
+- Trakt submenus: removed the 3 static "In Progress" entries (Movies, TV Shows, Episodes) - only the dynamic ones remain
+- Improved sync chain, Dropped Shows handling and counter
+- All add/remove/drop/restore notifications now show the colored item title and list name (Trakt, MDBList, TMDb)
+- Extended Info Options: added "My MDBList" menu for managing watchlist, lists and dropped shows
+- Fix hdhub4u
+- Fix some small bugs
+
+1.1.207
+- MDBList fully refactored: added OAuth authentication alongside API key, with automatic fallback across navigation, sync and playback
+- Added MDBList scrobbling (start/pause/stop/clear) for playback tracking
+- Watched status now supports two providers: Trakt and MDBList — choose the provider in Settings; all lists, ratings, badges, scrobbling and Kodi library sync, follow your choice.
+- Developer Options: custom Trakt Client ID/Secret and MDBList Client ID to use your own instead of the built-in ones.
+
+1.1.206
+- Fix Kodi 22 crash when trying to play an episode 
+- Metadata post-scan optimized
+- Removed VixSrc - HTTP provider
+- Small enhancements
 
 1.1.204
 - Improved library reverse sync performance (to Trakt)

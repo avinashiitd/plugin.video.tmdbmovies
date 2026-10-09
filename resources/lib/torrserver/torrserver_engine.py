@@ -26,13 +26,13 @@ try:
 except ImportError:
     req_lib = None
 
-from resources.lib.config import ADDON, ADDON_PATH, get_torrserver_host
+from resources.lib.core.config import ADDON, ADDON_PATH, get_torrserver_host
 
 _CANCEL_ACTIONS = frozenset([9, 10, 13, 92, 110, 216])
 
 def log(msg):
     try:
-        from resources.lib.scraper import log as scraper_log
+        from resources.lib.playback.scraper import log as scraper_log
         scraper_log(msg)
     except:
         xbmc.log("[TorrServer] %s" % msg)
@@ -69,9 +69,9 @@ class TorrServerPlayerMonitor(xbmc.Player):
 
     def onPlayBackStopped(self):
         self._is_torrserver = False
-        # NU ștergem hash-ul aici! TorrServer hang-ește pe HEAD `&play` 
-        # când hash-ul lipsește → CCurlFile::Stat timeout 20s → freeze 40s.
-        # Hash-ul e șters în `setup()` la următorul episod.
+        # NU stergem hash-ul aici! TorrServer hang-este pe HEAD `&play` 
+        # cand hash-ul lipseste → CCurlFile::Stat timeout 20s → freeze 40s.
+        # Hash-ul e sters in `setup()` la urmatorul episod.
 
     def onPlayBackEnded(self):
         self._is_torrserver = False
@@ -103,11 +103,13 @@ class TorrServerResolver(xbmcgui.WindowXMLDialog):
         super(TorrServerResolver, self).__init__(strXMLname, strFallbackPath, strDefaultName, forceFallback)
         self._cancel_event = threading.Event()
         self._closed = False
+        self._ready = threading.Event()
         self._result_url = None
         self._pick_files = None
         self._pick_info_hash = None
 
     def onInit(self):
+        self._ready.set()
         try:
             self.setFocusId(10)
         except:
@@ -283,7 +285,7 @@ _CUT_TAGS = re.compile(
     r'10bit|HDR|HDR10|DV|DoVi|Dolby[\.\s]?Vision|IMAX|'
     r'NF|AMZN|DSNP|ATVP|HMAX|PCOK|PMTP|STAN)\b', re.IGNORECASE)
 _BRACKETS = re.compile(r'[\[\(].*?[\)\]]')
-_SEASON_EP = re.compile(r'\b[Ss]\d{1,2}(?:[Ee]\d{1,2})?\b')
+_SEASON_EP = re.compile(r'\b[Ss]\d+(?:[Ee]\d+)?\b')
 
 def _extract_magnet_name(uri):
     if not uri or not uri.startswith('magnet:'):
@@ -339,7 +341,7 @@ def _best_title_and_year(info, magnet=''):
         bt = (info.get('Title', '') or info.get('title', '')).strip()
     return bt, by
 
-_VIDEO_EXT = ('.mkv', '.mp4', '.avi', '.mov', '.wmv', '.ts', '.m4v', '.webm', '.flv', '.m2ts')
+_VIDEO_EXT = ('.mkv', '.mp4', '.avi', '.mov', '.wmv', '.ts', '.m4v', '.webm', '.flv', '.m2ts', '.iso')
 _MIN_VIDEO_SIZE = 50 * 1024 * 1024
 
 def _format_file_label(f):
@@ -347,7 +349,7 @@ def _format_file_label(f):
     name = os.path.basename(path)
     name_no_ext = name.rsplit('.', 1)[0] if '.' in name else name
     display = name_no_ext.replace('.', ' ').replace('_', ' ')
-    ep_match = re.search(r'[Ss](\d{1,2})[Ee](\d{1,2})', name)
+    ep_match = re.search(r'[Ss](\d+)[Ee](\d+)', name)
     if ep_match:
         ep_tag = "S%02dE%02d" % (int(ep_match.group(1)), int(ep_match.group(2)))
     else:
@@ -433,7 +435,7 @@ def _do_buffer_and_play(ts, info_hash, file_id, file_path, file_size, title,
             ui_window.close_window()
             return
 
-def _worker_phase1(ts, magnet_uri, item_info, ui_window, platform, title, poster_for_ts):
+def _worker_phase1(ts, magnet_uri, item_info, ui_window, platform, title, poster_for_ts, torrent_b64=None):
     info_hash = None
     ce = ui_window._cancel_event
     try:
@@ -441,17 +443,34 @@ def _worker_phase1(ts, magnet_uri, item_info, ui_window, platform, title, poster
         if ce.is_set():
             return
         is_file_upload = False
-        if os.path.exists(magnet_uri) and os.path.isfile(magnet_uri):
-            info_hash = ts.add_file(magnet_uri, title=title, poster=poster_for_ts)
-            is_file_upload = True
-        elif magnet_uri.startswith('magnet:'):
-            info_hash = ts.add_magnet_fast(magnet_uri, title=title, poster=poster_for_ts)
-            is_file_upload = True
-        elif magnet_uri.lower().endswith('.torrent') or urlparse.urlparse(magnet_uri).path.lower().endswith('.torrent'):
-            info_hash = ts.add_magnet(magnet_uri, title=title, poster=poster_for_ts)
-            is_file_upload = True
-        else:
-            info_hash = ts.add_magnet(magnet_uri, title=title, poster=poster_for_ts)
+        # .torrent raw disponibil (ex. SeedPool trimite bytes la scraping)?
+        # Upload DIRECT = TorrServer are fisierele instant, fara BEP-9
+        # (schimbul de metadata pe magnet pur poate bloca indefinit chiar si
+        # cu peers conectati la trackerul privat).
+        if torrent_b64 and magnet_uri.startswith('magnet:'):
+            try:
+                import base64
+                raw = base64.b64decode(torrent_b64)
+                if raw[:1] == b'd':
+                    info_hash = ts._upload_multipart_raw(raw, 'torrent.torrent', title, poster_for_ts)
+                    if info_hash:
+                        is_file_upload = True
+                        log("Worker: .torrent bytes uploaded directly -> %s" % info_hash)
+            except Exception as _e:
+                log("Worker: b64 upload failed (%s), fallback la magnet" % str(_e)[:60])
+                info_hash = None
+        if not info_hash:
+            if os.path.exists(magnet_uri) and os.path.isfile(magnet_uri):
+                info_hash = ts.add_file(magnet_uri, title=title, poster=poster_for_ts)
+                is_file_upload = True
+            elif magnet_uri.startswith('magnet:'):
+                info_hash = ts.add_magnet_fast(magnet_uri, title=title, poster=poster_for_ts)
+                is_file_upload = True
+            elif magnet_uri.lower().endswith('.torrent') or urlparse.urlparse(magnet_uri).path.lower().endswith('.torrent'):
+                info_hash = ts.add_magnet(magnet_uri, title=title, poster=poster_for_ts)
+                is_file_upload = True
+            else:
+                info_hash = ts.add_magnet(magnet_uri, title=title, poster=poster_for_ts)
         if not info_hash:
             return
         ts.save_hash_to_settings(info_hash=info_hash)
@@ -470,7 +489,12 @@ def _worker_phase1(ts, magnet_uri, item_info, ui_window, platform, title, poster
         candidates = [f for f in files
                       if any(f.get('path', '').lower().endswith(e) for e in _VIDEO_EXT)]
         if not candidates:
-            candidates = files
+            # Torrent FARA niciun fisier video (ex. doar .exe/.scr) = sursa fake.
+            # Esuam devreme ca playerul sa sursa urmatoarea / sa redeschida sursele,
+            # nu sa incercam demuxer pe un executabil ("error probing input format").
+            log("Worker: torrentul nu are niciun fisier video (%d fisiere: %s) - sursa invalida/fake, skip"
+                % (len(files), ', '.join(f.get('path', '')[:40] for f in files[:3])))
+            return
         significant = [f for f in candidates if f.get('length', 0) > _MIN_VIDEO_SIZE]
         season = item_info.get('Season')
         episode = item_info.get('Episode')
@@ -486,6 +510,13 @@ def _worker_phase1(ts, magnet_uri, item_info, ui_window, platform, title, poster
                     chosen = max(exact, key=lambda x: x.get('length', 0))
             except:
                 pass
+        if not chosen:
+            junk = re.compile(r'(?i)\b(trailer|sample)\b')
+            significant = [f for f in significant if not junk.search(f.get('path', ''))]
+            if len(significant) == 1:
+                chosen = significant[0]
+            elif len(significant) > 1 and not (season and episode):
+                chosen = max(significant, key=lambda x: x.get('length', 0))
         if not chosen and len(significant) > 1:
             ui_window._pick_files = significant
             ui_window._pick_info_hash = info_hash
@@ -689,7 +720,7 @@ def _wait_for_ready(ts, info_hash, file_id, title, file_path, file_size,
         log("Buffer EXCEPTIE: %s" % str(e))
         return 'error'
 
-def get_torrserver_url(magnet_uri, item_info, bridge_info=None):
+def get_torrserver_url(magnet_uri, item_info, bridge_info=None, torrent_b64=None):
     if len(magnet_uri) == 40 and not magnet_uri.startswith(('http', 'magnet')):
         magnet_uri = "magnet:?xt=urn:btih:%s" % magnet_uri
     ts = _create_ts()
@@ -708,6 +739,7 @@ def get_torrserver_url(magnet_uri, item_info, bridge_info=None):
     poster_prop = poster or ''
     def _setup_window_props():
         win = xbmcgui.Window(10000)
+        win.clearProperty('tmdbmovies.scanning_mode')
         win.setProperty('tmdbmovies.fanart', fanart_prop)
         win.setProperty('tmdbmovies.clearlogo', logo_prop)
         win.setProperty('tmdbmovies.poster', poster_prop)
@@ -722,13 +754,15 @@ def get_torrserver_url(magnet_uri, item_info, bridge_info=None):
         win.setProperty('tmdbmovies.torrserver_flag', bridge_info.get('quality', 'SD'))
     worker1 = threading.Thread(
         target=_worker_phase1,
-        args=(ts, magnet_uri, item_info, ui1, platform, title, poster_for_ts))
+        args=(ts, magnet_uri, item_info, ui1, platform, title, poster_for_ts),
+        kwargs={'torrent_b64': torrent_b64})
     worker1.daemon = True
     worker1.start()
     if bridge_info:
         _bridge_active = [True]
         _lines = bridge_info.get('lines', [])
         def _bridge_loop():
+            ui1._ready.wait()
             while _bridge_active[0] and not ui1._closed:
                 try:
                     win = xbmcgui.Window(10000)
@@ -781,12 +815,41 @@ def get_torrserver_url(magnet_uri, item_info, bridge_info=None):
         _setup_window_props()
         xbmc.sleep(100)
         ui2 = TorrServerResolver('resolver_window.xml', ADDON_PATH, 'Default')
+        if bridge_info:
+            _bridge_active2 = [True]
+            _lines2 = bridge_info.get('lines', [])
+            def _bridge_loop2():
+                ui2._ready.wait()
+                while _bridge_active2[0] and not ui2._closed:
+                    try:
+                        win = xbmcgui.Window(10000)
+                        st = win.getProperty('tmdbmovies.torrserver_buffering') or ''
+                        sd = win.getProperty('tmdbmovies.torrserver_details') or ''
+                        pct = 0
+                        m = re.search(r'\((\d+\.?\d*)s\s*/\s*(\d+\.?\d*)s\)', st)
+                        if m:
+                            try:
+                                cur, need = float(m.group(1)), float(m.group(2))
+                                if need > 0:
+                                    pct = min(100, int(cur / need * 100))
+                            except:
+                                pass
+                        text = sd
+                        for line in _lines2:
+                            text = (text + '[CR]' if text else '') + line
+                        ui2.update(text, pct)
+                    except:
+                        pass
+                    xbmc.sleep(500)
+            threading.Thread(target=_bridge_loop2, daemon=True).start()
         worker2 = threading.Thread(
             target=_worker_phase2,
             args=(ts, ui1._pick_info_hash, chosen, title, ui2, platform))
         worker2.daemon = True
         worker2.start()
         ui2.doModal()
+        if bridge_info:
+            _bridge_active2[0] = False
         if ui2._closed and ui2._result_url is None:
             worker2.join(timeout=0.5)
             _clear_all_window_props()

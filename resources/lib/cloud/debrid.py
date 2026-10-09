@@ -1,0 +1,2273 @@
+# -*- coding: utf-8 -*-
+import sys
+import os
+import re
+import urllib.parse
+import xbmc
+import xbmcgui
+import xbmcplugin
+import xbmcvfs
+
+from resources.lib.core.config import ADDON as PROXIED_ADDON, provider_title, _fmt_dmy
+from resources.lib.core.utils import style_page_nav_item, next_page_label
+
+DEBRID_ACTIONS = {
+    'debrid_menu',
+    'debrid_torbox',
+    'debrid_rd',
+    'debrid_tb_cloud',
+    'debrid_tb_folder',
+    'debrid_tb_airlock',
+    'debrid_tb_account',
+    'debrid_rd_cloud',
+    'debrid_rd_folder',
+    'debrid_rd_downloads',
+    'debrid_rd_account',
+    'debrid_set_torbox_key',
+    'debrid_set_rd_key',
+    'debrid_premiumize',
+    'debrid_pm_cloud',
+    'debrid_pm_folder',
+    'debrid_pm_storage',
+    'debrid_pm_account',
+    'debrid_pm_retry',
+    'debrid_pm_delete_transfer',
+    'debrid_pm_clear_cache',
+    'debrid_set_pm_key',
+    'debrid_offcloud',
+    'debrid_oc_cloud',
+    'debrid_oc_folder',
+    'debrid_oc_history',
+    'debrid_oc_account',
+    'debrid_oc_delete',
+    'debrid_oc_clear_cache',
+    'debrid_set_oc_key',
+    'debrid_disconnect',
+    'debrid_tb_delete',
+    'debrid_tb_toggle_airlock',
+    'debrid_rd_delete_torrent',
+    'debrid_rd_delete_download',
+    'debrid_tb_clear_cache',
+    'debrid_rd_clear_cache',
+    'debrid_play',
+    'debrid_download',
+    'debrid_refresh',
+}
+
+_TB_COLOR = 'FF00FA9A'
+_RD_COLOR = 'FF70A1FF'
+_PM_COLOR = 'FFFA8072'
+_OC_COLOR = 'FF7C4DFF'
+_HL_COLOR = 'FFFDBD01'
+_ERR_COLOR = 'FFFF5555'
+
+MEDIA_LABELS = {
+    'torrents': 'Torrent',
+    'usenet': 'Usenet',
+    'webdl': 'WebDownload',
+}
+
+_HANDLE = None
+_BASE_URL = None
+_ADDON = None
+
+_CACHE_TTL = 1800
+
+_RD_TOTAL_KEY = 'tmdbmovies_rd_total'
+_RD_TOTAL_TTL = 0.5
+_RD_TOTAL_FETCHING = False
+
+
+def _ensure_globals():
+    global _ADDON, _BASE_URL, _HANDLE
+    if _ADDON is None:
+        _ADDON = PROXIED_ADDON
+    if _BASE_URL is None:
+        _BASE_URL = sys.argv[0]
+    if _HANDLE is None:
+        try:
+            _HANDLE = int(sys.argv[1])
+        except Exception:
+            _HANDLE = -1
+
+
+def _icon(name):
+    root = xbmcvfs.translatePath(_ADDON.getAddonInfo('path')).replace('\\', '/')
+    if not root.endswith('/'):
+        root += '/'
+    return root + 'resources/media/' + name
+
+
+def _tb_icon():
+    return _icon('torbox.png')
+
+
+def _rd_icon():
+    return _icon('realdebrid.png')
+
+
+def _pm_icon():
+    return _icon('premiumize.png')
+
+
+def _oc_icon():
+    return _icon('offcloud.png')
+
+
+def _build_url(query):
+    _ensure_globals()
+    return _BASE_URL + '?' + urllib.parse.urlencode(query)
+
+
+def _page_limit():
+    from resources.lib.core.config import get_page_limit_value
+    try:
+        return int(get_page_limit_value())
+    except Exception:
+        return 20
+
+
+_VIDEO_EXT = ('.mkv', '.mp4', '.avi', '.mov', '.m4v', '.webm', '.mpg', '.mpeg', '.wmv', '.m2ts')
+
+_JUNK_RE = re.compile(r'\b(cam|camrip|hdcam|hdts|hdtc|ts|telesync|trailer|sample|proof|screener|telecine|workprint)\b', re.IGNORECASE)
+
+
+def _is_junk_name(name):
+    try:
+        return bool(_JUNK_RE.search(str(name or '')))
+    except Exception:
+        return False
+
+
+def _kodi_major_local():
+    try:
+        return int(str(xbmc.getInfoLabel('System.BuildVersion') or '').split('.')[0])
+    except Exception:
+        return 22
+
+
+def _page_num(params):
+    try:
+        return max(1, int(params.get('page', '1') or 1))
+    except Exception:
+        return 1
+
+
+def _expiry_us_format():
+    try:
+        from resources.lib.core.config import ADDON as _cfg
+        return (_cfg.getSetting('date_format') or '0') == '1'
+    except Exception:
+        return False
+
+
+def _parse_expiry(value):
+    try:
+        import datetime as _dtm
+        if value is None:
+            return None
+        if isinstance(value, _dtm.datetime):
+            return value.replace(tzinfo=None) if value.tzinfo else value
+        if isinstance(value, _dtm.date):
+            return _dtm.datetime(value.year, value.month, value.day)
+        s = str(value).strip()
+        if not s:
+            return None
+        if re.match(r'^-?\d+(\.\d+)?$', s):
+            return _dtm.datetime.fromtimestamp(float(s))
+        t = s.replace('Z', '+00:00')
+        try:
+            dt = _dtm.datetime.fromisoformat(t)
+            return dt.replace(tzinfo=None) if dt.tzinfo else dt
+        except Exception:
+            pass
+        for fmt in ('%Y-%m-%dT%H:%M:%S', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d'):
+            try:
+                return _dtm.datetime.strptime(s.split('.')[0], fmt)
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return None
+
+
+def _fmt_expiry_date(value):
+    dt = _parse_expiry(value)
+    if dt is None:
+        return ''
+    try:
+        if _expiry_us_format():
+            return dt.strftime('%m/%d/%Y')
+        return dt.strftime('%d.%m.%Y')
+    except Exception:
+        return ''
+
+
+def _expiry_days_left(value):
+    dt = _parse_expiry(value)
+    if dt is None:
+        return None
+    try:
+        import datetime as _dtm
+        return max(0, (dt - _dtm.datetime.now()).days)
+    except Exception:
+        return None
+
+
+def _end(succeeded=True, cache=False):
+    _ensure_globals()
+    xbmcplugin.endOfDirectory(_HANDLE, succeeded=succeeded, cacheToDisc=cache)
+    # Set Views: listarile cloud nu seteaza content -> mod "unknown" (fara poll), ca sa
+    # nu pierdem timeout-ul pe fiecare deschidere (vezi views.apply_view).
+    if succeeded:
+        try:
+            from resources.lib.core import views
+            views.apply_view('cloud', None)
+        except Exception:
+            pass
+
+
+def _add_dir(url, li, is_folder=True):
+    _ensure_globals()
+    xbmcplugin.addDirectoryItem(_HANDLE, url, li, is_folder)
+
+
+def _notify(msg, icon=None, ms=3000):
+    xbmcgui.Dialog().notification(provider_title('tmdb', name='TMDb Movies'), msg, icon or _icon('debrid.png'), ms, False)
+
+
+def _count(label, count, exact=True):
+    try:
+        n = int(count or 0)
+    except Exception:
+        n = 0
+    if n <= 0:
+        return label
+    return f'{label} [B][COLOR {_HL_COLOR}]({count}{"" if exact else "+"})[/COLOR][/B]'
+
+
+def _fmt_size(num_bytes):
+    try:
+        b = float(num_bytes or 0)
+    except Exception:
+        b = 0.0
+    if b >= 1024 ** 3:
+        return f'{b / (1024 ** 3):.2f} GB'
+    if b >= 1024 ** 2:
+        return f'{b / (1024 ** 2):.2f} MB'
+    if b > 0:
+        return f'{b / 1024.0:.1f} KB'
+    return ''
+
+
+def _fmt_pct(progress):
+    try:
+        p = float(progress or 0)
+        if p <= 1.0:
+            p *= 100.0
+        return int(round(p))
+    except Exception:
+        return 0
+
+
+def _cache_get(key):
+    try:
+        from resources.lib.core.cache import MainCache
+        return MainCache().get(key)
+    except Exception:
+        return None
+
+
+def _cache_set(key, data, hours=_CACHE_TTL / 3600.0):
+    try:
+        from resources.lib.core.cache import MainCache
+        MainCache().set(key, data, expiration=hours)
+    except Exception:
+        pass
+
+
+def _cache_del(key):
+    try:
+        from resources.lib.core.cache import MainCache
+        MainCache().delete(key)
+    except Exception:
+        pass
+
+
+def _cache_del_prefix(prefix):
+    try:
+        from resources.lib.core.cache import MainCache
+        MainCache().delete_prefix(prefix)
+    except Exception:
+        pass
+
+
+def invalidate_playback_cache(debrid_service):
+    try:
+        srv = str(debrid_service or '').lower().replace('-', '').replace(' ', '')
+        if srv in ('realdebrid', 'rd'):
+            _cache_del_prefix('tmdbmovies_rd_')
+        elif srv in ('torbox', 'tb'):
+            _cache_del_prefix('tmdbmovies_tb_')
+        elif srv in ('premiumize', 'pm'):
+            _cache_del_prefix('tmdbmovies_pm_')
+        elif srv in ('offcloud', 'oc'):
+            _cache_del_prefix('tmdbmovies_oc_')
+    except Exception:
+        pass
+
+
+def _cached_call(key, fetch_fn):
+    data = _cache_get(key)
+    if data is not None:
+        return data, None
+    try:
+        data = fetch_fn()
+    except Exception as e:
+        return None, str(e)
+    _cache_set(key, data)
+    return data, None
+
+
+def _count_tb_finished_cached():
+    total = 0
+    for mt in ('torrents', 'usenet', 'webdl'):
+        items = _cache_get(f'tmdbmovies_tb_cloud_{mt}')
+        if isinstance(items, list):
+            total += sum(1 for it in items if _tb_finished(it))
+    return total
+
+
+def _error_item(message, retry_query, icon=None):
+    li = xbmcgui.ListItem(label=f'[B][COLOR {_ERR_COLOR}]Error:[/COLOR][/B] {message} - Click to retry')
+    icon = icon or _icon('debrid.png')
+    li.setArt({'icon': icon, 'thumb': icon})
+    li.addContextMenuItems([('Refresh', f'RunPlugin({_build_url({"mode": "debrid_refresh"})})')])
+    _add_dir(_build_url(retry_query), li, True)
+
+
+def _empty_item(label='Cloud is empty', icon=None):
+    li = xbmcgui.ListItem(label=label)
+    icon = icon or _icon('debrid.png')
+    li.setArt({'icon': icon, 'thumb': icon})
+    _add_dir(_build_url({}), li, False)
+
+
+def _add_inactive_row(label, icon):
+    li = xbmcgui.ListItem(label=label)
+    li.setArt({'icon': icon, 'thumb': icon})
+    _add_dir(_build_url({'mode': 'debrid_refresh'}), li, False)
+
+
+def _add_service_dir(label, query, icon, plot=''):
+    li = xbmcgui.ListItem(label=label)
+    li.setArt({'icon': icon, 'thumb': icon, 'poster': icon})
+    if plot:
+        try:
+            li.getVideoInfoTag().setPlot(plot)
+        except Exception:
+            pass
+    cm = [('Refresh', f'RunPlugin({_build_url({"mode": "debrid_refresh"})})')]
+    li.addContextMenuItems(cm)
+    _add_dir(_build_url(query), li, True)
+
+
+def _add_account_item(label, query, icon, plot=''):
+    li = xbmcgui.ListItem(label=label)
+    li.setArt({'icon': icon, 'thumb': icon, 'poster': icon})
+    if plot:
+        try:
+            li.getVideoInfoTag().setPlot(plot)
+        except Exception:
+            pass
+    _add_dir(_build_url(query), li, False)
+
+
+def _add_connect_item(label, query, icon, plot=''):
+    li = xbmcgui.ListItem(label=label)
+    li.setArt({'icon': icon, 'thumb': icon, 'poster': icon})
+    if plot:
+        try:
+            li.getVideoInfoTag().setPlot(plot)
+        except Exception:
+            pass
+    _add_dir(_build_url(query), li, False)
+
+
+def _add_refresh_item(label, icon):
+    li = xbmcgui.ListItem(label=f'[B][COLOR {_HL_COLOR}]{label}[/COLOR][/B]')
+    li.setArt({'icon': icon, 'thumb': icon})
+    li.addContextMenuItems([('Refresh', f'RunPlugin({_build_url({"mode": "debrid_refresh"})})')])
+    url = _build_url({'mode': 'debrid_menu'})
+    _add_dir(url, li, False)
+
+
+def _add_clear_cache_item(label, mode, icon, plot=''):
+    li = xbmcgui.ListItem(label=label)
+    li.setArt({'icon': icon, 'thumb': icon})
+    if plot:
+        try:
+            li.getVideoInfoTag().setPlot(plot)
+        except Exception:
+            pass
+    _add_dir(_build_url({'mode': mode}), li, False)
+
+
+def _add_disconnect_item(label, provider, icon, plot=''):
+    li = xbmcgui.ListItem(label=label)
+    li.setArt({'icon': icon, 'thumb': icon})
+    if plot:
+        try:
+            li.getVideoInfoTag().setPlot(plot)
+        except Exception:
+            pass
+    _add_dir(_build_url({'mode': 'debrid_disconnect', 'provider': provider}), li, False)
+
+
+def _rd_cloud_limit():
+    return max(5, min(int(_page_limit() or 20), 100))
+
+
+def _rd_cloud_key(page, limit):
+    return f"tmdbmovies_rd_cloud_p{page}_l{limit}"
+
+
+def _cloud_payload(obj):
+    if isinstance(obj, dict):
+        try:
+            total = int(obj.get('total') or 0)
+        except Exception:
+            total = 0
+        try:
+            total_pages = int(obj.get('total_pages') or 0)
+        except Exception:
+            total_pages = 0
+        return (obj.get('items') or []), total, total_pages
+    return (obj or []), 0, 0
+
+
+_rd_payload = _cloud_payload
+
+
+def _rd_store_total(total):
+    if total and int(total) > 0:
+        try:
+            _cache_set(_RD_TOTAL_KEY, int(total), hours=_RD_TOTAL_TTL)
+        except Exception:
+            pass
+
+
+def _rd_total_label():
+    v = _cache_get(_RD_TOTAL_KEY)
+    if v is not None:
+        try:
+            n = int(v)
+        except Exception:
+            n = 0
+        if n > 0:
+            return str(n), True
+    return _count_rd_cloud_cached()
+
+
+def _count_rd_cloud_cached():
+    items, total, _tp = _rd_payload(_cache_get(_rd_cloud_key(1, _rd_cloud_limit())))
+    if total > 0:
+        return str(total), True
+    n = sum(1 for it in items if isinstance(it, dict) and str(it.get('status') or '') == 'downloaded')
+    return str(n), False
+
+
+def _maybe_refresh_rd_total_bg():
+    global _RD_TOTAL_FETCHING
+    if _RD_TOTAL_FETCHING:
+        return
+    try:
+        from resources.lib.cloud import realdebrid_api
+        if not realdebrid_api.is_authenticated():
+            return
+    except Exception:
+        return
+    if _cache_get(_RD_TOTAL_KEY) is not None:
+        return
+
+    def _run():
+        global _RD_TOTAL_FETCHING
+        try:
+            from resources.lib.cloud import realdebrid_api
+            payload = realdebrid_api.user_cloud(1, 1)
+            items, total, _tp = _rd_payload(payload)
+            if total > 0:
+                _rd_store_total(total)
+                xbmc.log('[DEBRID][RD] total=%d (background, page1=%d)' % (total, len(items)), xbmc.LOGINFO)
+            elif not items:
+                return
+            try:
+                if 'tmdbmovies' not in (xbmc.getInfoLabel('Container.PluginName') or '').lower():
+                    return
+            except Exception:
+                return
+            try:
+                if xbmc.getCondVisibility('System.HasModalDialog') or xbmc.getCondVisibility('Container.IsUpdating'):
+                    return
+            except Exception:
+                return
+            xbmc.executebuiltin('Container.Refresh')
+        except Exception as e:
+            xbmc.log('[DEBRID][RD] total background fetch failed: %s' % e, xbmc.LOGWARNING)
+        finally:
+            _RD_TOTAL_FETCHING = False
+
+    _RD_TOTAL_FETCHING = True
+    try:
+        import threading
+        threading.Thread(target=_run, daemon=True).start()
+    except Exception:
+        _RD_TOTAL_FETCHING = False
+
+
+def _view_main():
+    _ensure_globals()
+
+    tb_count = _count_tb_finished_cached()
+    rd_text, rd_exact = _rd_total_label()
+    xbmc.log('[DEBRID][RD] root label count=%s exact=%s' % (rd_text, rd_exact), xbmc.LOGDEBUG)
+
+    _add_service_dir(_count('[B][COLOR ' + _TB_COLOR + ']TorBox[/COLOR][/B]', tb_count),
+                     {'mode': 'debrid_torbox'}, _tb_icon(),
+                     plot='Your TorBox cloud: torrents, usenet and web downloads, plus the AirLock view.')
+    _add_service_dir(_count('[B][COLOR ' + _RD_COLOR + ']Real-Debrid[/COLOR][/B]', rd_text, rd_exact),
+                     {'mode': 'debrid_rd'}, _rd_icon(),
+                     plot='Your Real-Debrid account: cloud storage with the torrents you added, and the history of generated download links.')
+
+    pm_ready = _safe_count(_pm_ready_count)
+    _add_service_dir(_count('[B][COLOR ' + _PM_COLOR + ']Premiumize[/COLOR][/B]', pm_ready),
+                     {'mode': 'debrid_premiumize'}, _pm_icon(),
+                     plot='Your Premiumize cloud: cloud storage and your transfer history, folders to open and your account details.')
+    oc_ready = _safe_count(_oc_ready_count)
+    _add_service_dir(_count('[B][COLOR ' + _OC_COLOR + ']Offcloud[/COLOR][/B]', oc_ready),
+                     {'mode': 'debrid_offcloud'}, _oc_icon(),
+                     plot='Your Offcloud requests: cloud storage with the finished requests, the full history, folders to open and your account details.')
+    _end()
+    _maybe_refresh_rd_total_bg()
+
+
+def _safe_count(fn):
+    try:
+        return fn()
+    except Exception as e:
+        xbmc.log('[DEBRID] root count failed: %s' % e, xbmc.LOGWARNING)
+        return ''
+
+
+def _pm_ready_count():
+    from resources.lib.cloud import premiumize_api
+    if not premiumize_api.is_authenticated():
+        return ''
+    payload = _cache_get('tmdbmovies_pm_cloud')
+    if payload is None:
+        return ''
+    items, total, _tp = _cloud_payload(payload)
+    n = sum(1 for it in items if isinstance(it, dict) and str(it.get('status') or '') in ('finished', 'seeding'))
+    return str(n), n > 0
+
+
+def _oc_ready_count():
+    from resources.lib.cloud import offcloud_api
+    if not offcloud_api.is_authenticated():
+        return ''
+    payload = _cache_get('tmdbmovies_oc_cloud')
+    if payload is None:
+        return ''
+    items, total, _tp = _cloud_payload(payload)
+    n = sum(1 for it in items if isinstance(it, dict) and str(it.get('status') or '').lower() == 'completed')
+    return str(n), n > 0
+
+
+def _view_torbox():
+    _ensure_globals()
+    from resources.lib.cloud import torbox_api
+
+    if not torbox_api.is_authenticated():
+        _add_connect_item('[B][COLOR ' + _TB_COLOR + ']Connect TorBox[/COLOR][/B] (enter API key)',
+                          {'mode': 'debrid_set_torbox_key'}, _tb_icon(),
+                          plot='Stores a TorBox API key on this device so the addon can read your TorBox cloud. Get the key from your TorBox account settings.')
+        _end()
+        return
+
+    counts = {}
+    first_err = None
+    first_mt = ''
+    for mt in ('torrents', 'usenet', 'webdl'):
+        items, err = _cached_call(f'tmdbmovies_tb_cloud_{mt}', lambda m=mt: torbox_api.user_cloud(m))
+        counts[mt] = sum(1 for it in (items or []) if _tb_finished(it))
+        if err and first_err is None:
+            first_err = err
+            first_mt = mt
+    if first_err is not None:
+        _error_item(first_err, {'mode': 'debrid_tb_cloud', 'mediatype': first_mt}, _tb_icon())
+
+    _add_account_item('[B][COLOR ' + _TB_COLOR + ']TorBox Account[/COLOR][/B]', {'mode': 'debrid_tb_account'}, _tb_icon(),
+                      plot='Your TorBox account: plan, premium expiry, days left and the AirLock storage quota for your plan.')
+    if first_err is None:
+        _add_service_dir(_count('[B]TorBox Torrent[/B]', counts.get('torrents', 0)), {'mode': 'debrid_tb_cloud', 'mediatype': 'torrents'}, _tb_icon(),
+                         plot='Torrents stored in your TorBox cloud. The badge counts the finished ones (cached or 100% downloaded).')
+        _add_service_dir(_count('[B]TorBox Usenet[/B]', counts.get('usenet', 0)), {'mode': 'debrid_tb_cloud', 'mediatype': 'usenet'}, _tb_icon(),
+                         plot='Usenet downloads stored in your TorBox cloud. The badge counts the finished ones.')
+        _add_service_dir(_count('[B]TorBox WebDownload[/B]', counts.get('webdl', 0)), {'mode': 'debrid_tb_cloud', 'mediatype': 'webdl'}, _tb_icon(),
+                         plot='Web downloads (direct HTTP links) stored in your TorBox cloud. The badge counts the finished ones.')
+
+        air_count = 0
+        for mt in ('torrents', 'usenet', 'webdl'):
+            air_items = _cache_get(f'tmdbmovies_tb_cloud_{mt}')
+            if isinstance(air_items, list):
+                air_count += sum(1 for it in air_items if isinstance(it, dict) and it.get('airlocked') is True)
+        _add_service_dir(_count('[B][COLOR FF00E5FF]AirLock[/COLOR][/B] (Extended Retention)', air_count),
+                         {'mode': 'debrid_tb_airlock'}, _tb_icon(),
+                         plot='Items you flagged as AirLock. TorBox keeps them past the normal retention period, using the AirLock quota included in your plan.')
+
+    _add_clear_cache_item('[B][COLOR ' + _ERR_COLOR + ']Clear TorBox Cache[/COLOR][/B]', 'debrid_tb_clear_cache', _tb_icon(),
+                          plot='Drops the locally cached TorBox lists. Nothing is deleted from TorBox; the next visit re-fetches them from the API.')
+    _add_disconnect_item('[B][COLOR ' + _ERR_COLOR + ']Disconnect TorBox[/COLOR][/B]', 'torbox', _tb_icon(),
+                         plot='Removes the TorBox API key stored on this device. Your cloud and account stay untouched.')
+    _end()
+
+
+def _view_rd():
+    _ensure_globals()
+    from resources.lib.cloud import realdebrid_api
+
+    if not realdebrid_api.is_authenticated():
+        _add_connect_item('[B][COLOR ' + _RD_COLOR + ']Connect Real-Debrid[/COLOR][/B] (enter API key)',
+                          {'mode': 'debrid_set_rd_key'}, _rd_icon(),
+                          plot='Stores a Real-Debrid API key on this device so the addon can read your Real-Debrid cloud. Generate it in your Real-Debrid account settings.')
+        _end()
+        return
+
+    payload, err = _cached_call(_rd_cloud_key(1, _rd_cloud_limit()), lambda: realdebrid_api.user_cloud(1, _rd_cloud_limit()))
+    if err:
+        _error_item(err, {'mode': 'debrid_rd_cloud'}, _rd_icon())
+
+    _add_account_item('[B][COLOR ' + _RD_COLOR + ']Real-Debrid Account Info[/COLOR][/B]', {'mode': 'debrid_rd_account'}, _rd_icon(),
+                      plot='Your Real-Debrid account: user, e-mail, plan, premium expiry, days left and fidelity points.')
+    if not err:
+        items, total, _tp = _rd_payload(payload)
+        _rd_store_total(total)
+        if total > 0:
+            cloud_label = _count('[B]Real-Debrid Cloud Storage[/B]', str(total), True)
+        else:
+            dl = sum(1 for it in items if isinstance(it, dict) and str(it.get('status') or '') == 'downloaded')
+            cloud_label = _count('[B]Real-Debrid Cloud Storage[/B]', str(dl), False)
+        _add_service_dir(cloud_label, {'mode': 'debrid_rd_cloud'}, _rd_icon(),
+                         plot='Torrents in your Real-Debrid cloud, newest first. The badge is the server total and counts every status shown here, not only the completed ones.')
+
+        dl_payload, _dl_err = _cached_call('tmdbmovies_rd_dl_total', lambda: realdebrid_api.downloads(1, 1))
+        _dl_items, dl_total, _dl_tp = _rd_payload(dl_payload)
+        hist_label = _count('[B]Real-Debrid History[/B]', str(dl_total) if dl_total > 0 else '', True)
+        _add_service_dir(hist_label, {'mode': 'debrid_rd_downloads'}, _rd_icon(),
+                         plot='Download links you generated on Real-Debrid (your unrestrict history), not the cloud torrents. The badge is the total Real-Debrid holds for this endpoint.')
+    _add_clear_cache_item('[B][COLOR ' + _ERR_COLOR + ']Clear Real-Debrid Cache[/COLOR][/B]', 'debrid_rd_clear_cache', _rd_icon(),
+                          plot='Drops the locally cached Real-Debrid lists. Nothing is deleted from Real-Debrid; the next visit re-fetches them from the API.')
+    _add_disconnect_item('[B][COLOR ' + _ERR_COLOR + ']Disconnect Real-Debrid[/COLOR][/B]', 'rd', _rd_icon(),
+                         plot='Removes the Real-Debrid API key stored on this device. Your cloud and account stay untouched.')
+    _end()
+
+
+_PM_READY = ('finished', 'seeding')
+_PM_ERROR = ('errored', 'error', 'failed')
+_OC_READY = ('completed', 'finished', 'done')
+_OC_ERROR = ('error', 'failed')
+
+
+def _pm_status_label(item):
+    status = str(item.get('status') or '').lower()
+    if status in _PM_READY:
+        return 'FINISHED' if status == 'finished' else 'SEEDING'
+    if status in _PM_ERROR:
+        return 'ERROR'
+    if status == 'queued':
+        return 'QUEUED'
+    try:
+        pct = int(item.get('progress_pct') or 0)
+    except Exception:
+        pct = 0
+    if pct > 0:
+        return f'{pct}%'
+    return (status or 'active').upper()
+
+
+def _oc_status_label(item):
+    status = str(item.get('status') or '').lower()
+    if status in _OC_READY:
+        return 'FINISHED'
+    if status in _OC_ERROR:
+        return 'ERROR'
+    return (status or 'active').upper()
+
+
+def _status_color(status, ready, error):
+    if status in error:
+        return _ERR_COLOR
+    if status in ready:
+        return _TB_COLOR
+    return _HL_COLOR
+
+
+def _pm_rows(items, source_name):
+    ordered = sorted(items, key=lambda it: str(it.get('id') or ''), reverse=True)
+    idx = 0
+    for it in ordered:
+        if not isinstance(it, dict):
+            continue
+        name = str(it.get('name') or 'Unnamed')
+        if _is_junk_name(name):
+            continue
+        idx += 1
+        status = str(it.get('status') or '').lower()
+        folder_id = str(it.get('folder_id') or '')
+        is_folder = bool(it.get('is_folder')) or not folder_id
+        slabel = _pm_status_label(it)
+        color = _status_color(slabel, ('FINISHED', 'SEEDING'), ('ERROR',))
+        size = _fmt_size(it.get('size'))
+        head = f'{idx:02d} | [B][COLOR {color}]{slabel}[/COLOR][/B]'
+        if size:
+            head += ' | ' + size
+        li = xbmcgui.ListItem(label=head + ' | [I]' + name + '[/I]')
+        li.setArt({'icon': _pm_icon(), 'thumb': _pm_icon(), 'poster': _pm_icon()})
+        plot = f'Premiumize | {name} | Status: {slabel}'
+        if it.get('progress_pct') and slabel not in ('FINISHED', 'SEEDING', 'ERROR'):
+            plot += f' | Progress: {it.get("progress_pct")}%'
+        if size:
+            plot += ' | Size: ' + size
+        if source_name:
+            plot += ' | From: ' + source_name
+        try:
+            tag = li.getVideoInfoTag()
+            tag.setTitle(name)
+            tag.setPlot(plot)
+        except Exception:
+            pass
+        cm = [('Refresh', f'RunPlugin({_build_url({"mode": "debrid_refresh"})})')]
+        if status in _PM_ERROR:
+            cm.insert(0, ('Retry Transfer', f'RunPlugin({_build_url({"mode": "debrid_pm_retry", "item_id": str(it.get("id") or ""), "name": name})})'))
+        tid = str(it.get('id') or '')
+        cm.insert(0, ('Delete Transfer', f'RunPlugin({_build_url({"mode": "debrid_pm_delete_transfer", "item_id": tid, "name": name})})'))
+        if is_folder:
+            li.addContextMenuItems(cm)
+            _add_dir(_build_url({'mode': 'debrid_pm_folder', 'src': folder_id, 'name': name}), li, True)
+            continue
+        cm.insert(0, ('Download', f'RunPlugin({_build_url({"mode": "debrid_download", "provider": "pm", "src": folder_id, "file_id": tid, "name": name, "file_name": name})})'))
+        li.addContextMenuItems(cm)
+        if status in _PM_READY:
+            play_q = {'mode': 'debrid_play', 'provider': 'pm', 'src': folder_id, 'file_id': tid, 'name': name, 'file_name': name}
+            li.setProperty('IsPlayable', 'true')
+        else:
+            play_q = {'mode': 'debrid_pm_folder', 'src': folder_id, 'name': name}
+        _add_dir(_build_url(play_q), li, False)
+
+
+def _view_premiumize():
+    _ensure_globals()
+    from resources.lib.cloud import premiumize_api
+
+    if not premiumize_api.is_authenticated():
+        _add_connect_item('[B][COLOR ' + _PM_COLOR + ']Connect Premiumize[/COLOR][/B] (enter API key)',
+                          {'mode': 'debrid_set_pm_key'}, _pm_icon(),
+                          plot='Stores a Premiumize API key on this device so the addon can read your Premiumize cloud. Copy the API key from your Premiumize account page.')
+        _end()
+        return
+
+    payload, err = _cached_call('tmdbmovies_pm_cloud', premiumize_api.user_cloud)
+    if err:
+        _error_item(err, {'mode': 'debrid_premiumize'}, _pm_icon())
+
+    _add_account_item('[B][COLOR ' + _PM_COLOR + ']Premiumize Account[/COLOR][/B]', {'mode': 'debrid_pm_account'}, _pm_icon(),
+                      plot='Your Premiumize account: status, premium expiry, days left and how much of your cloud space is used.')
+    _add_service_dir('[B]Premiumize Cloud Storage[/B]', {'mode': 'debrid_pm_storage'}, _pm_icon(),
+                     plot='Browse your whole Premiumize cloud from the root: folders open up, files play or download straight from Premiumize.')
+    if not err:
+        items, total, _tp = _cloud_payload(payload)
+        ready = sum(1 for it in items if isinstance(it, dict) and str(it.get('status') or '').lower() in _PM_READY)
+        active = sum(1 for it in items if isinstance(it, dict) and str(it.get('status') or '').lower() not in _PM_READY)
+        _add_service_dir(_count('[B]Premiumize History[/B]', ready or active, ready > 0), {'mode': 'debrid_pm_cloud'}, _pm_icon(),
+                         plot='Every transfer in your Premiumize account, newest first: finished files play directly, folders open up, and unfinished ones show their progress. The badge counts the ready ones.')
+    _add_clear_cache_item('[B][COLOR ' + _ERR_COLOR + ']Clear Premiumize Cache[/COLOR][/B]', 'debrid_pm_clear_cache', _pm_icon(),
+                          plot='Drops the locally cached Premiumize lists. Nothing is deleted from Premiumize; the next visit re-fetches them from the API.')
+    _add_disconnect_item('[B][COLOR ' + _ERR_COLOR + ']Disconnect Premiumize[/COLOR][/B]', 'premiumize', _pm_icon(),
+                         plot='Removes the Premiumize API key stored on this device. Your cloud and account stay untouched.')
+    _end()
+
+
+def _view_pm_cloud(params):
+    _ensure_globals()
+    from resources.lib.cloud import premiumize_api
+
+    payload, err = _cached_call('tmdbmovies_pm_cloud', premiumize_api.user_cloud)
+    if err:
+        _error_item(err, {'mode': 'debrid_premiumize'}, _pm_icon())
+        _end()
+        return
+    items, total, _tp = _cloud_payload(payload)
+    if not items:
+        _empty_item('Nothing in your Premiumize history yet', _pm_icon())
+        _end()
+        return
+    _pm_rows(items, '')
+    _end()
+
+
+def _view_pm_folder(params):
+    _ensure_globals()
+    from resources.lib.cloud import premiumize_api
+
+    src = str(params.get('src') or '').strip()
+    name = params.get('name', '')
+    if not src:
+        _empty_item('Invalid folder', _pm_icon())
+        _end()
+        return
+    try:
+        info = premiumize_api.item_details(src)
+    except Exception as e:
+        _error_item(str(e), {'mode': 'debrid_premiumize'}, _pm_icon())
+        _end()
+        return
+    content = info.get('content') if isinstance(info, dict) else None
+    items = []
+    for it in (content if isinstance(content, list) else []):
+        if not isinstance(it, dict):
+            continue
+        ftype = str(it.get('type') or '').lower()
+        items.append({'id': str(it.get('id') or ''), 'name': str(it.get('name') or 'Unnamed'),
+                      'status': 'finished', 'is_folder': ftype == 'folder',
+                      'size': int(it.get('size') or 0), 'folder_id': '' if ftype == 'folder' else str(it.get('id') or '')})
+    if not items:
+        _empty_item('No playable files', _pm_icon())
+        _end()
+        return
+    _pm_rows(items, name)
+    _end()
+
+
+def _view_pm_storage(params):
+    _ensure_globals()
+    from resources.lib.cloud import premiumize_api
+
+    folder_id = str(params.get('folder_id') or '').strip()
+    name = str(params.get('name') or '')
+    try:
+        payload, err = _cached_call('tmdbmovies_pm_folder_%s' % (folder_id or 'root'),
+                                    lambda: premiumize_api.folder_list(folder_id))
+    except Exception as e:
+        payload, err = None, str(e)
+    if err or not payload:
+        if err:
+            _error_item(err, {'mode': 'debrid_premiumize'}, _pm_icon())
+        else:
+            _empty_item('Cloud folder is empty', _pm_icon())
+        _end()
+        return
+    src_items = payload.get('items') if isinstance(payload, dict) else None
+    items = []
+    for it in (src_items if isinstance(src_items, list) else []):
+        if not isinstance(it, dict):
+            continue
+        nm = str(it.get('name') or 'Unnamed')
+        if _is_junk_name(nm):
+            continue
+        is_folder = bool(it.get('is_folder'))
+        items.append({
+            'id': str(it.get('id') or ''),
+            'name': nm,
+            'status': 'finished',
+            'is_folder': is_folder,
+            'size': int(it.get('size') or 0),
+            'link': str(it.get('link') or ''),
+            'folder_id': '' if is_folder else str(it.get('id') or ''),
+        })
+    if not items:
+        _empty_item('Cloud folder is empty', _pm_icon())
+        _end()
+        return
+    # Folderele se deschid in aceeasi vedere (folder/list), fisierele se reda
+    # direct din cloud prin item/details.
+    ordered = sorted(items, key=lambda it: (not it['is_folder'], str(it.get('name') or '').lower()))
+    for idx, it in enumerate(ordered, 1):
+        nm = it['name']
+        size = _fmt_size(it.get('size'))
+        head = '%02d | [B][COLOR %s]%s[/COLOR][/B]' % (idx, _PM_COLOR, 'CLOUD')
+        if size:
+            head += ' | ' + size
+        li = xbmcgui.ListItem(label=head + ' | [I]' + nm + '[/I]')
+        li.setArt({'icon': _pm_icon(), 'thumb': _pm_icon(), 'poster': _pm_icon()})
+        plot = 'Premiumize Cloud | ' + nm
+        if size:
+            plot += ' | Size: ' + size
+        if name:
+            plot += ' | From: ' + name
+        try:
+            tag = li.getVideoInfoTag()
+            tag.setTitle(nm)
+            tag.setPlot(plot)
+        except Exception:
+            pass
+        li.addContextMenuItems([('Refresh', f'RunPlugin({_build_url({"mode": "debrid_refresh"})})')])
+        if it['is_folder']:
+            _add_dir(_build_url({'mode': 'debrid_pm_storage', 'folder_id': it['id'], 'name': nm}), li, True)
+            continue
+        cm = [('Download', f'RunPlugin({_build_url({"mode": "debrid_download", "provider": "pm", "item_id": it["id"], "name": nm, "file_name": nm})})')]
+        li.addContextMenuItems(cm)
+        _add_dir(_build_url({'mode': 'debrid_play', 'provider': 'pm', 'item_id': it['id'],
+                             'name': nm, 'file_name': nm}), li, False)
+    _end()
+
+
+def _view_pm_account():
+    _ensure_globals()
+    from resources.lib.cloud import premiumize_api
+
+    try:
+        info = premiumize_api.account_info()
+    except Exception as e:
+        xbmcgui.Dialog().ok('Premiumize Account', str(e))
+        return
+    if not isinstance(info, dict):
+        info = {}
+
+    def _num(key):
+        try:
+            return float(info.get(key) or 0)
+        except Exception:
+            return 0.0
+
+    used_gb = _num('space_used') / (1024.0 ** 3)
+    max_gb = _num('space_max') / (1024.0 ** 3)
+    status = str(info.get('status') or 'unknown')
+    lines = ['[B]Status:[/B] ' + status]
+    exp_date = _fmt_expiry_date(info.get('premium_until'))
+    if exp_date:
+        lines.append('[B]Premium expires:[/B] ' + exp_date)
+        days = _expiry_days_left(info.get('premium_until'))
+        if days is not None:
+            lines.append('[B]Days remaining:[/B] ' + str(days))
+    else:
+        lines.append('[B]Plan:[/B] Free')
+    lines.append(f'[B]Space used:[/B] {used_gb:.2f} GB of {max_gb:.2f} GB')
+    try:
+        cid = str(info.get('customer_id') or '')
+    except Exception:
+        cid = ''
+    if cid:
+        lines.append('[B]Customer ID:[/B] ' + cid)
+    xbmcgui.Dialog().textviewer('Premiumize Account', '\n'.join(lines))
+
+
+def _view_offcloud():
+    _ensure_globals()
+    from resources.lib.cloud import offcloud_api
+
+    if not offcloud_api.is_authenticated():
+        _add_connect_item('[B][COLOR ' + _OC_COLOR + ']Connect Offcloud[/COLOR][/B] (enter API key)',
+                          {'mode': 'debrid_set_oc_key'}, _oc_icon(),
+                          plot='Stores an Offcloud API key on this device so the addon can read your Offcloud requests. Create a key in the Offcloud API section of your account.')
+        _end()
+        return
+
+    payload, err = _cached_call('tmdbmovies_oc_cloud', offcloud_api.user_cloud)
+    if err:
+        _error_item(err, {'mode': 'debrid_offcloud'}, _oc_icon())
+
+    _add_account_item('[B][COLOR ' + _OC_COLOR + ']Offcloud Account[/COLOR][/B]', {'mode': 'debrid_oc_account'}, _oc_icon(),
+                      plot='Your Offcloud account: the details your Offcloud profile exposes for API use.')
+    if not err:
+        items, total, _tp = _cloud_payload(payload)
+        done = sum(1 for it in items if isinstance(it, dict) and str(it.get('status') or '').lower() in _OC_READY)
+        running = len(items) - done
+        _add_service_dir(_count('[B]Offcloud Cloud Storage[/B]', done or running, done > 0), {'mode': 'debrid_oc_cloud'}, _oc_icon(),
+                         plot='Your finished Offcloud requests, ready to play. Directories open up so you can pick a file inside.')
+        _add_service_dir(_count('[B]Offcloud History[/B]', str(total) if total else ''), {'mode': 'debrid_oc_history'}, _oc_icon(),
+                         plot='Every request in your Offcloud history, whatever its status. Offcloud itself has no retry endpoint, so failed ones have to be re-sent from Offcloud.')
+    _add_clear_cache_item('[B][COLOR ' + _ERR_COLOR + ']Clear Offcloud Cache[/COLOR][/B]', 'debrid_oc_clear_cache', _oc_icon(),
+                          plot='Drops the locally cached Offcloud lists. Nothing is deleted from Offcloud; the next visit re-fetches them from the API.')
+    _add_disconnect_item('[B][COLOR ' + _ERR_COLOR + ']Disconnect Offcloud[/COLOR][/B]', 'offcloud', _oc_icon(),
+                         plot='Removes the Offcloud API key stored on this device. Your requests and account stay untouched.')
+    _end()
+
+
+def _oc_rows(items, source_name):
+    ordered = sorted(items, key=lambda it: str(it.get('created') or ''), reverse=True)
+    idx = 0
+    for it in ordered:
+        if not isinstance(it, dict):
+            continue
+        name = str(it.get('name') or 'Unnamed')
+        if _is_junk_name(name):
+            continue
+        idx += 1
+        status = str(it.get('status') or '').lower()
+        slabel = _oc_status_label(it)
+        color = _status_color(slabel, ('FINISHED',), ('ERROR',))
+        li = xbmcgui.ListItem(label=f'{idx:02d} | [B][COLOR {color}]{slabel}[/COLOR][/B] | [I]{name}[/I]')
+        li.setArt({'icon': _oc_icon(), 'thumb': _oc_icon(), 'poster': _oc_icon()})
+        plot = f'Offcloud | {name} | Status: {slabel}'
+        if it.get('server'):
+            plot += ' | Server: ' + str(it.get('server'))
+        if source_name:
+            plot += ' | From: ' + source_name
+        try:
+            tag = li.getVideoInfoTag()
+            tag.setTitle(name)
+            tag.setPlot(plot)
+        except Exception:
+            pass
+        rid = str(it.get('id') or '')
+        cm = [('Refresh', f'RunPlugin({_build_url({"mode": "debrid_refresh"})})')]
+        cm.insert(0, ('Remove Request', f'RunPlugin({_build_url({"mode": "debrid_oc_delete", "item_id": rid, "name": name})})'))
+        if it.get('is_folder'):
+            li.addContextMenuItems(cm)
+            _add_dir(_build_url({'mode': 'debrid_oc_folder', 'item_id': rid, 'name': name}), li, True)
+            continue
+        cm.insert(0, ('Download', f'RunPlugin({_build_url({"mode": "debrid_download", "provider": "oc", "item_id": rid, "name": name, "file_name": name})})'))
+        li.addContextMenuItems(cm)
+        if status in _OC_READY:
+            play_q = {'mode': 'debrid_play', 'provider': 'oc', 'item_id': rid, 'name': name, 'file_name': name}
+            li.setProperty('IsPlayable', 'true')
+        else:
+            play_q = {'mode': 'debrid_offcloud', 'item_id': rid, 'name': name}
+        _add_dir(_build_url(play_q), li, False)
+
+
+def _view_oc_cloud(params):
+    _ensure_globals()
+    from resources.lib.cloud import offcloud_api
+
+    payload, err = _cached_call('tmdbmovies_oc_cloud', offcloud_api.user_cloud)
+    if err:
+        _error_item(err, {'mode': 'debrid_offcloud'}, _oc_icon())
+        _end()
+        return
+    items, total, _tp = _cloud_payload(payload)
+    done = [it for it in items if isinstance(it, dict) and str(it.get('status') or '').lower() in _OC_READY]
+    if not done:
+        _empty_item('Cloud storage is empty', _oc_icon())
+        _end()
+        return
+    _oc_rows(done, '')
+    _end()
+
+
+def _view_oc_history(params):
+    _ensure_globals()
+    from resources.lib.cloud import offcloud_api
+
+    payload, err = _cached_call('tmdbmovies_oc_cloud', offcloud_api.user_cloud)
+    if err:
+        _error_item(err, {'mode': 'debrid_offcloud'}, _oc_icon())
+        _end()
+        return
+    items, total, _tp = _cloud_payload(payload)
+    if not items:
+        _empty_item('History is empty', _oc_icon())
+        _end()
+        return
+    _oc_rows(items, '')
+    _end()
+
+
+def _view_oc_folder(params):
+    _ensure_globals()
+    from resources.lib.cloud import offcloud_api
+
+    rid = str(params.get('item_id') or '').strip()
+    name = params.get('name', '')
+    if not rid:
+        _empty_item('Invalid request', _oc_icon())
+        _end()
+        return
+    try:
+        entries = offcloud_api.explore(rid)
+    except Exception as e:
+        _error_item(str(e), {'mode': 'debrid_offcloud'}, _oc_icon())
+        _end()
+        return
+    items = []
+    for en in (entries or []):
+        if not isinstance(en, dict):
+            continue
+        ename = str(en.get('name') or 'Unnamed')
+        if _is_junk_name(ename):
+            continue
+        items.append({'id': rid, 'name': ename, 'status': 'completed', 'is_folder': False,
+                      'server': str(params.get('server') or ''), 'url': en.get('link') or '',
+                      'size': int(en.get('size') or 0)})
+    if not items:
+        _empty_item('No playable files', _oc_icon())
+        _end()
+        return
+    _oc_rows(items, name)
+    _end()
+
+
+def _view_oc_account():
+    _ensure_globals()
+    from resources.lib.cloud import offcloud_api
+
+    try:
+        info = offcloud_api.account_info()
+    except Exception as e:
+        xbmcgui.Dialog().ok('Offcloud Account', str(e))
+        return
+    if not isinstance(info, dict):
+        info = {}
+    premium = bool(info.get('is_premium'))
+    exp = info.get('expiration_date')
+    lines = []
+    if info.get('email'):
+        lines.append('[B]E-mail:[/B] ' + str(info.get('email')))
+    if info.get('user_id'):
+        lines.append('[B]User ID:[/B] ' + str(info.get('user_id')))
+    lines.append('[B]Plan:[/B] ' + ('Premium' if premium else 'Free'))
+    exp_date = _fmt_expiry_date(exp) if exp else ''
+    if exp_date:
+        lines.append('[B]Expires:[/B] ' + exp_date)
+    can_dl = info.get('can_download')
+    if can_dl is not None:
+        lines.append('[B]Direct links:[/B] ' + ('Yes' if can_dl else 'No'))
+        if not can_dl:
+            lines.append('[I]Your plan does not allow Offcloud to generate direct links, so files here can be listed but not played or downloaded.[/I]')
+    if not lines:
+        lines.append('Offcloud returned no profile fields for this key.')
+    xbmcgui.Dialog().textviewer('Offcloud Account', '\n'.join(lines))
+
+
+def _tb_finished(item):
+    if not isinstance(item, dict):
+        return False
+    if item.get('download_finished') is True:
+        return True
+    name = str(item.get('name') or '')
+    if not name:
+        return False
+    progress = _fmt_pct(item.get('progress'))
+    if progress < 100:
+        return False
+    dl_state = str(item.get('download_state') or '').lower()
+    if dl_state in ('downloading', 'metadl', 'checkingresumedata', 'paused', 'stalled (no seeds)'):
+        return False
+    return True
+
+
+def _tb_status(item):
+    dl_state = str(item.get('download_state') or '').strip()
+    progress = _fmt_pct(item.get('progress'))
+    if progress >= 100:
+        return 'CACHED' if dl_state.lower() == 'cached' else 'FINISHED'
+    return dl_state.upper() or 'ACTIVE'
+
+
+def _view_tb_cloud(params):
+    _ensure_globals()
+    from resources.lib.cloud import torbox_api
+
+    mediatype = params.get('mediatype', 'torrents')
+    if mediatype not in ('torrents', 'usenet', 'webdl'):
+        mediatype = 'torrents'
+    page = _page_num(params)
+
+    items, err = _cached_call(f'tmdbmovies_tb_cloud_{mediatype}', lambda: torbox_api.user_cloud(mediatype))
+    if err:
+        _error_item(err, {'mode': 'debrid_tb_cloud', 'mediatype': mediatype, 'page': str(page)}, _tb_icon())
+        _end()
+        return
+
+    ordered = sorted((items or []),
+                     key=lambda it: str(it.get('updated_at') or it.get('created_at') or ''), reverse=True)
+
+    if not ordered:
+        _empty_item('Cloud is empty', _tb_icon())
+        _end()
+        return
+
+    limit = _page_limit()
+    total_pages = max(1, -(-len(ordered) // limit))
+    start = (page - 1) * limit
+    chunk = ordered[start:start + limit]
+
+    for it in chunk:
+        if not isinstance(it, dict):
+            continue
+        if _tb_finished(it):
+            _add_tb_folder_row(it, mediatype)
+        else:
+            nm = str(it.get('name') or 'Unnamed')
+            if _is_junk_name(nm):
+                continue
+            pct = _fmt_pct(it.get('progress'))
+            _add_inactive_row(f'[B]{_tb_status(it)} - {pct}%[/B] | [I]{nm}[/I]', _tb_icon())
+
+    if page < total_pages:
+        li = xbmcgui.ListItem(label=next_page_label(None))
+        style_page_nav_item(li, page + 1)
+        _add_dir(_build_url({'mode': 'debrid_tb_cloud', 'mediatype': mediatype, 'page': str(page + 1)}), li, True)
+
+    _end()
+
+
+def _add_tb_folder_row(item, mediatype):
+    name = str(item.get('name') or 'Unnamed')
+    if _is_junk_name(name):
+        return
+    size = _fmt_size(item.get('size'))
+    created = _fmt_dmy(item.get('created_at') or '')
+    status = _tb_status(item)
+    airlocked = item.get('airlocked')
+    parts = []
+    if isinstance(airlocked, bool) and airlocked:
+        parts.append('[B][COLOR FF00E5FF]AIRLOCK[/COLOR][/B]')
+    parts.append(f'[B]{status}[/B]')
+    if size:
+        parts.append(size)
+    if created:
+        parts.append(created)
+    label = ' | '.join(parts) + f' | [I]{name}[/I]'
+
+    li = xbmcgui.ListItem(label=label)
+    li.setArt({'icon': _tb_icon(), 'thumb': _tb_icon(), 'poster': _tb_icon()})
+    try:
+        tag = li.getVideoInfoTag()
+        tag.setTitle(name)
+        tag.setPlot(f'{MEDIA_LABELS[mediatype]}: {name} | Status: {status} | Size: {size or "?"} | Added: {created or "?"}')
+    except Exception:
+        pass
+
+    item_id = item.get('id')
+    base_q = {'mode': 'debrid_tb_folder', 'mediatype': mediatype, 'item_id': str(item_id), 'name': name}
+    cm = [
+        ('Delete', f'RunPlugin({_build_url({"mode": "debrid_tb_delete", "mediatype": mediatype, "item_id": str(item_id), "name": name})})'),
+    ]
+    if isinstance(airlocked, bool):
+        air_label = 'Remove from [B][COLOR FF00E5FF]AirLock[/COLOR][/B]' if airlocked else 'Add to [B][COLOR FF00E5FF]AirLock[/COLOR][/B]'
+        cm.append((air_label, f'RunPlugin({_build_url({"mode": "debrid_tb_toggle_airlock", "mediatype": mediatype, "item_id": str(item_id), "name": name})})'))
+    cm.append(('Refresh', f'RunPlugin({_build_url({"mode": "debrid_refresh"})})'))
+    li.addContextMenuItems(cm)
+    _add_dir(_build_url(base_q), li, True)
+
+
+def _view_tb_airlock(params):
+    _ensure_globals()
+    from resources.lib.cloud import torbox_api
+    page = _page_num(params)
+
+    merged = []
+    had_err = None
+    for mt in ('torrents', 'usenet', 'webdl'):
+        items, err = _cached_call(f'tmdbmovies_tb_cloud_{mt}', lambda m=mt: torbox_api.user_cloud(m))
+        if err:
+            had_err = err
+            break
+        for it in (items or []):
+            if isinstance(it, dict) and it.get('airlocked') is True:
+                it = dict(it)
+                it['_mt'] = mt
+                merged.append(it)
+
+    if had_err:
+        _error_item(had_err, {'mode': 'debrid_tb_airlock', 'page': str(page)}, _tb_icon())
+        _end()
+        return
+
+    merged.sort(key=lambda it: str(it.get('updated_at') or it.get('created_at') or ''), reverse=True)
+
+    if not merged:
+        _empty_item('No AirLocked items', _tb_icon())
+        _end()
+        return
+
+    limit = _page_limit()
+    total_pages = max(1, -(-len(merged) // limit))
+    start = (page - 1) * limit
+    chunk = merged[start:start + limit]
+
+    for it in chunk:
+        _add_tb_folder_row(it, it.get('_mt') or 'torrents')
+
+    if page < total_pages:
+        li = xbmcgui.ListItem(label=next_page_label(None))
+        style_page_nav_item(li, page + 1)
+        _add_dir(_build_url({'mode': 'debrid_tb_airlock', 'page': str(page + 1)}), li, True)
+
+    _end()
+
+
+def _view_tb_folder(params):
+    _ensure_globals()
+    from resources.lib.cloud import torbox_api
+
+    mediatype = params.get('mediatype', 'torrents')
+    item_id = params.get('item_id', '')
+    name = params.get('name', '')
+
+    if not item_id:
+        _empty_item('Invalid item', _tb_icon())
+        _end()
+        return
+
+    try:
+        info = torbox_api.user_folder(mediatype, item_id)
+    except Exception as e:
+        _error_item(str(e), {'mode': 'debrid_tb_cloud', 'mediatype': mediatype}, _tb_icon())
+        _end()
+        return
+
+    if not isinstance(info, dict):
+        _empty_item('Item not found on TorBox', _tb_icon())
+        _end()
+        return
+
+    files = info.get('files')
+    if not isinstance(files, list):
+        files = []
+
+    video_files = []
+    for f in files:
+        if not isinstance(f, dict):
+            continue
+        f_idx = f.get('id', 0)
+        fname = str(f.get('name') or f.get('short_name') or '')
+        if not fname.lower().endswith(_VIDEO_EXT):
+            continue
+        if _is_junk_name(fname):
+            continue
+        video_files.append((f_idx, fname, f.get('size')))
+
+    if not video_files:
+        _empty_item('No playable files', _tb_icon())
+        _end()
+        return
+
+    video_files.sort(key=lambda t: -(t[2] or 0))
+    for idx, (f_idx, fname, fsize) in enumerate(video_files, start=1):
+        size = _fmt_size(fsize)
+        label = f'{idx:02d} | [B]FILE[/B] | ' + (size + ' | ' if size else '') + f'[I]{fname}[/I]'
+        li = xbmcgui.ListItem(label=label)
+        li.setArt({'icon': _tb_icon(), 'thumb': _tb_icon(), 'poster': _tb_icon()})
+        try:
+            tag = li.getVideoInfoTag()
+            tag.setTitle(fname)
+            tag.setPlot(f'{MEDIA_LABELS.get(mediatype, "File")}: {name} | File: {fname} | Size: {size or "?"}')
+        except Exception:
+            pass
+        li.setProperty('IsPlayable', 'true')
+        play_q = {'mode': 'debrid_play', 'mediatype': mediatype, 'item_id': str(item_id), 'file_id': str(f_idx), 'name': name, 'file_name': fname}
+        dl_q = {'mode': 'debrid_download', 'mediatype': mediatype, 'item_id': str(item_id), 'file_id': str(f_idx), 'name': name, 'file_name': fname}
+        cm = [
+            ('Download', f'RunPlugin({_build_url(dl_q)})'),
+            ('Delete Containing Transfer', f'RunPlugin({_build_url({"mode": "debrid_tb_delete", "mediatype": mediatype, "item_id": str(item_id), "name": name})})'),
+            ('Refresh', f'RunPlugin({_build_url({"mode": "debrid_refresh"})})'),
+        ]
+        li.addContextMenuItems(cm)
+        _add_dir(_build_url(play_q), li, False)
+
+    _end()
+
+
+TB_PLANS = {
+    0: 'Free',
+    1: 'Essential',
+    2: 'Pro',
+    3: 'Standard',
+}
+
+
+def _tb_plan_name(value):
+    if isinstance(value, str) and value and not value.isdigit():
+        return value
+    try:
+        return TB_PLANS.get(int(value), 'Unknown')
+    except Exception:
+        return 'Unknown'
+
+
+def _view_tb_account():
+    _ensure_globals()
+    from resources.lib.cloud import torbox_api
+
+    try:
+        info = torbox_api.account_info()
+    except Exception as e:
+        xbmcgui.Dialog().ok('TorBox Account', str(e))
+        return
+
+    plan = _tb_plan_name(info.get('plan'))
+    email = str(info.get('email') or '?')
+    expires_at = info.get('premium_expires_at') or ''
+    try:
+        dl_val = float(info.get('total_downloaded') or 0)
+    except Exception:
+        dl_val = 0.0
+    xbmc.log(f'[DEBRID][TorBox] total_downloaded raw: {info.get("total_downloaded")}', xbmc.LOGDEBUG)
+    dl_str = f'{dl_val:g} GB'
+
+    lines = [
+        '[B]Email:[/B] ' + email,
+        '[B]Plan:[/B] ' + plan,
+    ]
+    exp_date = _fmt_expiry_date(expires_at)
+    if exp_date:
+        lines.append('[B]Premium expires:[/B] ' + exp_date)
+        days = _expiry_days_left(expires_at)
+        if days is not None:
+            lines.append('[B]Days remaining:[/B] ' + str(days))
+    lines.append('[B]Total downloaded:[/B] ' + (dl_str or '0'))
+    if plan == 'Pro':
+        quota = '1 TB'
+    elif plan == 'Standard':
+        quota = '500 GB'
+    elif plan == 'Essential':
+        quota = '300 GB'
+    else:
+        quota = '0 GB (paid plans only)'
+    lines.append('[B]AirLock quota:[/B] ' + quota)
+    xbmcgui.Dialog().textviewer('TorBox Account', '\n'.join(lines))
+
+
+def _view_rd_cloud(params):
+    _ensure_globals()
+    from resources.lib.cloud import realdebrid_api
+
+    page = _page_num(params)
+    limit = _rd_cloud_limit()
+    payload, err = _cached_call(_rd_cloud_key(page, limit), lambda: realdebrid_api.user_cloud(page, limit))
+    if err:
+        _error_item(err, {'mode': 'debrid_rd_cloud', 'page': str(page)}, _rd_icon())
+        _end()
+        return
+
+    items, total, total_pages = _rd_payload(payload)
+    _rd_store_total(total)
+    raw_count = len(items)
+    xbmc.log('[DEBRID][RD] cloud page %d limit %d: %d items, X-Total-Count=%s, pages=%s'
+             % (page, limit, raw_count, total or '?', total_pages or '?'), xbmc.LOGDEBUG)
+    ordered = sorted(items,
+                     key=lambda it: str(it.get('added') or ''), reverse=True)
+
+    if not raw_count:
+        _known, _known_exact = _rd_total_label()
+        if page > 1 and _known_exact and int(_known or 0) > 0:
+            li = xbmcgui.ListItem(label='[B][COLOR ' + _ERR_COLOR + ']Page %d is past the end (%s items total) - click to go back[/COLOR][/B]'
+                                  % (page, _known))
+            li.setArt({'icon': _rd_icon(), 'thumb': _rd_icon()})
+            _add_dir(_build_url({'mode': 'debrid_rd_cloud', 'page': '1'}), li, True)
+        else:
+            _empty_item('Cloud is empty', _rd_icon())
+        _end()
+        return
+
+    for it in ordered:
+        if not isinstance(it, dict):
+            continue
+        if str(it.get('status') or '') == 'downloaded':
+            _add_rd_folder_row(it)
+        else:
+            nm = str(it.get('filename') or 'Unnamed')
+            if _is_junk_name(nm):
+                continue
+            try:
+                pct = int(float(it.get('progress') or 0))
+            except Exception:
+                pct = 0
+            _add_inactive_row(f'[B]{str(it.get("status") or "active").upper()} - {pct}%[/B] | [I]{nm}[/I]', _rd_icon())
+
+    if total_pages > 0:
+        show_next = page < total_pages
+    else:
+        show_next = raw_count >= limit
+    if show_next:
+        li = xbmcgui.ListItem(label=next_page_label(None))
+        style_page_nav_item(li, page + 1)
+        _add_dir(_build_url({'mode': 'debrid_rd_cloud', 'page': str(page + 1)}), li, True)
+
+    _end()
+
+
+def _add_rd_folder_row(item):
+    name = str(item.get('filename') or 'Unnamed')
+    if _is_junk_name(name):
+        return
+    size = _fmt_size(item.get('bytes'))
+    added = _fmt_dmy(item.get('added') or '')
+    status = str(item.get('status') or 'unknown').upper()
+    label = f'[B]{status}[/B] | ' + (size + ' | ' if size else '') + (added + ' | ' if added else '') + f'[I]{name}[/I]'
+
+    li = xbmcgui.ListItem(label=label)
+    li.setArt({'icon': _rd_icon(), 'thumb': _rd_icon(), 'poster': _rd_icon()})
+    try:
+        tag = li.getVideoInfoTag()
+        tag.setTitle(name)
+        tag.setPlot(f'Cloud Storage: {name} | Status: {status} | Size: {size or "?"} | Added: {added or "?"}')
+    except Exception:
+        pass
+
+    tid = item.get('id')
+    cm = [
+        ('Delete', f'RunPlugin({_build_url({"mode": "debrid_rd_delete_torrent", "item_id": str(tid), "name": name})})'),
+        ('Refresh', f'RunPlugin({_build_url({"mode": "debrid_refresh"})})'),
+    ]
+    li.addContextMenuItems(cm)
+    _add_dir(_build_url({'mode': 'debrid_rd_folder', 'item_id': str(tid), 'name': name}), li, True)
+
+
+def _rd_selected_links(info):
+    try:
+        files = info.get('files') or []
+        links = info.get('links') or []
+    except Exception:
+        return []
+    out = []
+    link_iter = iter(links)
+    for f in files:
+        if not isinstance(f, dict):
+            continue
+        if not f.get('selected', 1):
+            continue
+        out.append((f.get('id'), next(link_iter, '')))
+    return out
+
+
+def _rd_find_download(did, page, limit):
+    from resources.lib.cloud import realdebrid_api
+    pages = [page]
+    for step in (1, -1, 2, -2):
+        if len(pages) >= 5:
+            break
+        cand = page + step
+        if cand >= 1 and cand not in pages:
+            pages.append(cand)
+    for p in pages:
+        key = f'tmdbmovies_rd_downloads_p{p}_l{limit}'
+        payload = _cache_get(key)
+        if payload is None:
+            try:
+                payload = realdebrid_api.downloads(p, limit)
+            except Exception:
+                continue
+            try:
+                _cache_set(key, payload)
+            except Exception:
+                pass
+        items = []
+        if isinstance(payload, dict):
+            items = payload.get('items') or []
+        elif isinstance(payload, list):
+            items = payload
+        for it in items:
+            if isinstance(it, dict) and str(it.get('id') or '') == str(did):
+                return it
+    return None
+
+
+def _view_rd_folder(params):
+    _ensure_globals()
+    from resources.lib.cloud import realdebrid_api
+
+    tid = params.get('item_id', '')
+    name = params.get('name', '')
+
+    if not tid:
+        _empty_item('Invalid item', _rd_icon())
+        _end()
+        return
+
+    try:
+        info = realdebrid_api.torrent_info(tid)
+    except Exception as e:
+        _error_item(str(e), {'mode': 'debrid_rd_cloud'}, _rd_icon())
+        _end()
+        return
+
+    files = info.get('files') or []
+    links = info.get('links') or []
+
+    video_files = []
+    link_iter = iter(links)
+    for f in files:
+        if not isinstance(f, dict):
+            continue
+        if not f.get('selected', 1):
+            continue
+        link = next(link_iter, '')
+        fname = str(f.get('path') or f.get('name') or '')
+        if not fname.lower().endswith(_VIDEO_EXT):
+            continue
+        if _is_junk_name(fname):
+            continue
+        short = fname.split('/')[-1] if '/' in fname else fname
+        video_files.append((f.get('id'), short, f.get('bytes'), fname, link))
+
+    if not video_files:
+        _empty_item('No playable files', _rd_icon())
+        _end()
+        return
+
+    video_files.sort(key=lambda t: -(t[2] or 0))
+    for idx, (fid, short, fsize, full_path, link) in enumerate(video_files, start=1):
+        size = _fmt_size(fsize)
+        label = f'{idx:02d} | [B]FILE[/B] | ' + (size + ' | ' if size else '') + f'[I]{short}[/I]'
+        li = xbmcgui.ListItem(label=label)
+        li.setArt({'icon': _rd_icon(), 'thumb': _rd_icon(), 'poster': _rd_icon()})
+        try:
+            tag = li.getVideoInfoTag()
+            tag.setTitle(short)
+            tag.setPlot(f'Cloud Storage: {name} | File: {full_path} | Size: {size or "?"}')
+        except Exception:
+            pass
+        li.setProperty('IsPlayable', 'true')
+        play_q = {'mode': 'debrid_play', 'provider': 'rd', 'item_id': str(tid), 'file_id': str(fid or 0), 'name': name, 'file_name': short}
+        dl_q = {'mode': 'debrid_download', 'provider': 'rd', 'item_id': str(tid), 'file_id': str(fid or 0), 'name': name, 'file_name': short}
+        cm = [
+            ('Download', f'RunPlugin({_build_url(dl_q)})'),
+            ('Delete Containing Transfer', f'RunPlugin({_build_url({"mode": "debrid_rd_delete_torrent", "item_id": str(tid), "name": name})})'),
+            ('Refresh', f'RunPlugin({_build_url({"mode": "debrid_refresh"})})'),
+        ]
+        li.addContextMenuItems(cm)
+        _add_dir(_build_url(play_q), li, False)
+
+    _end()
+
+
+def _view_rd_downloads(params):
+    _ensure_globals()
+    from resources.lib.cloud import realdebrid_api
+
+    page = _page_num(params)
+    limit = _page_limit()
+    key = f'tmdbmovies_rd_downloads_p{page}_l{limit}'
+    payload, err = _cached_call(key, lambda: realdebrid_api.downloads(page, limit))
+    if err:
+        _error_item(err, {'mode': 'debrid_rd_downloads', 'page': str(page)}, _rd_icon())
+        _end()
+        return
+
+    if isinstance(payload, dict) and 'items' in payload:
+        listing = payload.get('items') or []
+        total_pages = int(payload.get('total_pages', 1) or 1)
+    else:
+        listing, total_pages = (payload or []), 1
+    xbmc.log(f'[DEBRID][RD] history page {page} limit {limit}: {len(listing or [])} items, {total_pages} pages, total={int(payload.get("total") or 0) if isinstance(payload, dict) else 0}', xbmc.LOGDEBUG)
+
+    if not listing:
+        _empty_item('No download history', _rd_icon())
+        _end()
+        return
+
+    for it in listing:
+        _add_rd_download_row(it, page)
+
+    if page < total_pages:
+        li = xbmcgui.ListItem(label=next_page_label(None))
+        style_page_nav_item(li, page + 1)
+        _add_dir(_build_url({'mode': 'debrid_rd_downloads', 'page': str(page + 1)}), li, True)
+
+    _end()
+
+
+def _add_rd_download_row(item, page=1):
+    name = str(item.get('filename') or 'Unnamed')
+    size = _fmt_size(item.get('filesize'))
+    generated = _fmt_dmy(item.get('generated') or '')
+    host = str(item.get('host') or '')
+    if _is_junk_name(name):
+        return
+    label = f'[B]DL[/B] | ' + (size + ' | ' if size else '') + (generated + ' | ' if generated else '') + f'[I]{name}[/I]'
+
+    li = xbmcgui.ListItem(label=label)
+    li.setArt({'icon': _rd_icon(), 'thumb': _rd_icon(), 'poster': _rd_icon()})
+    try:
+        tag = li.getVideoInfoTag()
+        tag.setTitle(name)
+        tag.setPlot(f'History: {name} | Host: {host} | Size: {size or "?"} | Generated: {generated or "?"}')
+    except Exception:
+        pass
+
+    did = item.get('id')
+    play_q = {'mode': 'debrid_play', 'provider': 'rd', 'item_id': str(did), 'page': str(page), 'name': name, 'file_name': name}
+    dl_q = {'mode': 'debrid_download', 'provider': 'rd', 'item_id': str(did), 'page': str(page), 'name': name, 'file_name': name}
+    cm = [
+        ('Download', f'RunPlugin({_build_url(dl_q)})'),
+        ('Delete', f'RunPlugin({_build_url({"mode": "debrid_rd_delete_download", "item_id": str(did), "name": name})})'),
+        ('Refresh', f'RunPlugin({_build_url({"mode": "debrid_refresh"})})'),
+    ]
+    li.addContextMenuItems(cm)
+    li.setProperty('IsPlayable', 'true')
+    _add_dir(_build_url(play_q), li, False)
+
+
+def _view_rd_account():
+    _ensure_globals()
+    from resources.lib.cloud import realdebrid_api
+
+    try:
+        info = realdebrid_api.account_info()
+    except Exception as e:
+        xbmcgui.Dialog().ok('Real-Debrid Account Info', str(e))
+        return
+
+    user = str(info.get('username') or '?')
+    email = str(info.get('email') or '?')
+    plan = str(info.get('type') or '?')
+    expiration = info.get('expiration') or ''
+    points = info.get('points') or 0
+
+    lines = [
+        '[B]User:[/B] ' + user,
+        '[B]Email:[/B] ' + email,
+        '[B]Plan:[/B] ' + plan,
+    ]
+    exp_date = _fmt_expiry_date(expiration)
+    if exp_date:
+        lines.append('[B]Expires:[/B] ' + exp_date)
+        days = _expiry_days_left(expiration)
+        if days is not None:
+            lines.append(f'[B]Days left:[/B] {days}')
+    else:
+        atype = str(info.get('type') or '').strip().lower()
+        lines.append('[B]Days left:[/B] ' + ('0' if atype and atype != 'premium' else 'Unknown'))
+    lines.append(f'[B]Fidelity points:[/B] {points}')
+    xbmcgui.Dialog().textviewer('Real-Debrid Account Info', '\n'.join(lines))
+
+
+_CRED_CFG = {
+    'torbox': {'label': 'TorBox', 'heading': 'Enter TorBox API Key (torbox.app/settings)',
+               'key': 'torbox_api_key', 'status': 'torbox_status', 'icon': '_tb_icon', 'module': 'cloud.torbox_api',
+               'validate': 'account_info'},
+    'rd': {'label': 'Real-Debrid', 'heading': 'Enter Real-Debrid API Key (real-debrid.com/apitoken)',
+           'key': 'rd_api_key', 'status': 'rd_status', 'icon': '_rd_icon', 'module': 'cloud.realdebrid_api',
+           'validate': 'account_info'},
+    'premiumize': {'label': 'Premiumize', 'heading': 'Enter Premiumize API Key (premiumize.me/api)',
+                   'key': 'pm_api_key', 'status': 'pm_status', 'icon': '_pm_icon', 'module': 'cloud.premiumize_api',
+                   'validate': 'account_info'},
+    'offcloud': {'label': 'Offcloud', 'heading': 'Enter Offcloud API Key (offcloud.com/api)',
+                 'key': 'oc_api_key', 'status': 'oc_status', 'icon': '_oc_icon', 'module': 'cloud.offcloud_api',
+                 'validate': 'account_info'},
+}
+
+
+def _set_api_key(provider):
+    _ensure_globals()
+    cfg = _CRED_CFG.get(provider)
+    if not cfg:
+        _notify('Unknown provider', ms=3000)
+        return
+    icon = globals()[cfg['icon']]()
+    dialog = xbmcgui.Dialog()
+    key = dialog.input(cfg['heading'], type=xbmcgui.INPUT_ALPHANUM, option=xbmcgui.ALPHANUM_HIDE_INPUT)
+    key = (key or '').strip()
+    if not key:
+        return
+
+    from resources.lib.core.config import ADDON as _A
+    mod = __import__('resources.lib.' + cfg['module'], fromlist=[cfg['module']])
+    prev = (_A.getSetting(cfg['key']) or '').strip()
+    _A.setSetting(cfg['key'], key)
+
+    busy = xbmcgui.DialogProgressBG()
+    busy.create(provider_title('tmdb', name='TMDb Movies'), 'Validating API key...')
+    valid = False
+    detail = ''
+    try:
+        getattr(mod, cfg['validate'])()
+        valid = True
+    except Exception as e:
+        detail = str(e)
+        _A.setSetting(cfg['key'], prev)
+    finally:
+        busy.close()
+
+    if valid:
+        try:
+            mod.clear_cloud_cache()
+            _A.setSetting(cfg['status'], 'Connected')
+        except Exception:
+            pass
+        _notify('Connected to ' + cfg['label'], icon=icon)
+        xbmc.executebuiltin('Container.Refresh')
+    else:
+        _notify('Invalid API key: ' + detail, ms=4000)
+
+
+def _disconnect(provider):
+    _ensure_globals()
+    cfg = _CRED_CFG.get(provider)
+    if not cfg:
+        _notify('Unknown provider', ms=3000)
+        return
+    label = cfg['label']
+    icon = globals()[cfg['icon']]()
+    if not xbmcgui.Dialog().yesno('Disconnect ' + label, f'Remove the saved API key for [B]{label}[/B]?'):
+        return
+    _ADDON.setSetting(cfg['key'], '')
+    _ADDON.setSetting(cfg['status'], 'Disconnected')
+    try:
+        mod = __import__('resources.lib.' + cfg['module'], fromlist=[cfg['module']])
+        mod.clear_cloud_cache()
+    except Exception:
+        pass
+    _notify('Disconnected from ' + label, icon=icon)
+    xbmc.executebuiltin('Container.Refresh')
+
+
+def _confirm_delete(name):
+    return xbmcgui.Dialog().yesno('Delete from Debrid', f'Delete [B]{name}[/B] permanently from your debrid account?')
+
+
+def _delete_tb(params):
+    _ensure_globals()
+    from resources.lib.cloud import torbox_api
+
+    mediatype = params.get('mediatype', 'torrents')
+    item_id = params.get('item_id', '')
+    name = params.get('name', '') or 'this item'
+
+    if not item_id:
+        return
+    if not _confirm_delete(name):
+        return
+    try:
+        torbox_api.delete_item(mediatype, item_id)
+    except Exception as e:
+        _notify(f'Delete failed: {e}', ms=4000)
+        return
+    _cache_del_prefix('tmdbmovies_tb_')
+    _notify(f'{name} was removed', icon=_tb_icon())
+    xbmc.executebuiltin('Container.Refresh')
+
+
+def _toggle_tb_airlock(params):
+    _ensure_globals()
+    from resources.lib.cloud import torbox_api
+
+    mediatype = params.get('mediatype', 'torrents')
+    item_id = params.get('item_id', '')
+    name = params.get('name', '') or 'this item'
+
+    if not item_id:
+        return
+    if not xbmcgui.Dialog().yesno('AirLock', f'Toggle AirLock for [B]{name}[/B]? Removing does not reset the countdown; the item remains subject to its last download/activity.'):
+        return
+    try:
+        new_state = torbox_api.toggle_airlock(mediatype, item_id)
+    except Exception as e:
+        _notify(f'AirLock: {e}', ms=4000)
+        return
+    _cache_del_prefix('tmdbmovies_tb_')
+    verb = 'added to' if new_state else 'removed from'
+    _notify(f'{name} {verb} AirLock', icon=_tb_icon())
+    xbmc.executebuiltin('Container.Refresh')
+
+
+def _delete_rd_torrent(params):
+    _ensure_globals()
+    from resources.lib.cloud import realdebrid_api
+
+    item_id = params.get('item_id', '')
+    name = params.get('name', '') or 'this item'
+    if not item_id:
+        return
+    if not _confirm_delete(name):
+        return
+    try:
+        realdebrid_api.delete_torrent(item_id)
+    except Exception as e:
+        _notify(f'Delete failed: {e}', ms=4000)
+        return
+    _cache_del_prefix('tmdbmovies_rd_')
+    _notify(f'{name} was removed', icon=_rd_icon())
+    xbmc.executebuiltin('Container.Refresh')
+
+
+def _delete_rd_download(params):
+    _ensure_globals()
+    from resources.lib.cloud import realdebrid_api
+
+    item_id = params.get('item_id', '')
+    name = params.get('name', '') or 'this item'
+    if not item_id:
+        return
+    if not xbmcgui.Dialog().yesno('Delete from History', f'Remove [B]{name}[/B] from download history? The files in Cloud Storage are kept.'):
+        return
+    try:
+        realdebrid_api.delete_download(item_id)
+    except Exception as e:
+        _notify(f'Delete failed: {e}', ms=4000)
+        return
+    _cache_del_prefix('tmdbmovies_rd_')
+    _notify(f'{name} was removed', icon=_rd_icon())
+    xbmc.executebuiltin('Container.Refresh')
+
+
+def _delete_pm_transfer(params):
+    _ensure_globals()
+    from resources.lib.cloud import premiumize_api
+
+    item_id = str(params.get('item_id') or '').strip()
+    name = params.get('name', '') or 'this transfer'
+    if not item_id:
+        return
+    if not _confirm_delete(name):
+        return
+    try:
+        premiumize_api.delete_transfer(item_id)
+    except Exception as e:
+        _notify(f'Delete failed: {e}', ms=4000)
+        return
+    _cache_del_prefix('tmdbmovies_pm_')
+    _notify(f'{name} was removed', icon=_pm_icon())
+    xbmc.executebuiltin('Container.Refresh')
+
+
+def _retry_pm_transfer(params):
+    _ensure_globals()
+    from resources.lib.cloud import premiumize_api
+
+    item_id = str(params.get('item_id') or '').strip()
+    name = params.get('name', '') or 'this transfer'
+    if not item_id:
+        return
+    try:
+        premiumize_api.retry_transfer(item_id)
+    except Exception as e:
+        _notify(f'Retry failed: {e}', ms=4000)
+        return
+    _cache_del_prefix('tmdbmovies_pm_')
+    _notify(f'{name} is being retried', icon=_pm_icon())
+    xbmc.executebuiltin('Container.Refresh')
+
+
+def _delete_oc_request(params):
+    _ensure_globals()
+    from resources.lib.cloud import offcloud_api
+
+    item_id = str(params.get('item_id') or '').strip()
+    name = params.get('name', '') or 'this request'
+    if not item_id:
+        return
+    if not _confirm_delete(name):
+        return
+    try:
+        offcloud_api.delete_request(item_id)
+    except Exception as e:
+        _notify(f'Remove failed: {e}', ms=4000)
+        return
+    _cache_del_prefix('tmdbmovies_oc_')
+    _notify(f'{name} was removed', icon=_oc_icon())
+    xbmc.executebuiltin('Container.Refresh')
+
+
+def _clear_pm_cache():
+    try:
+        from resources.lib.cloud import premiumize_api
+        premiumize_api.clear_cloud_cache()
+    except Exception:
+        pass
+    _notify('Premiumize cache cleared')
+    xbmc.executebuiltin('Container.Refresh')
+
+
+def _clear_oc_cache():
+    try:
+        from resources.lib.cloud import offcloud_api
+        offcloud_api.clear_cloud_cache()
+    except Exception:
+        pass
+    _notify('Offcloud cache cleared')
+    xbmc.executebuiltin('Container.Refresh')
+
+
+def _resolve_tb_link(mediatype, item_id, file_id):
+    from resources.lib.cloud import torbox_api
+    return torbox_api.unrestrict_link(mediatype, item_id, file_id)
+
+
+def _resolve_rd_link(params):
+    from resources.lib.cloud import realdebrid_api
+    item_id = params.get('item_id', '')
+    file_id = params.get('file_id', '')
+    if file_id:
+        info = realdebrid_api.torrent_info(item_id)
+        for sid, link in _rd_selected_links(info):
+            if str(sid) == str(file_id) and link:
+                return realdebrid_api.unrestrict_link(link)
+        raise Exception('File link not available')
+    page = _page_num(params)
+    limit = _page_limit()
+    found = _rd_find_download(item_id, page, limit)
+    if isinstance(found, dict):
+        direct = str(found.get('download') or '')
+        if direct:
+            return realdebrid_api.unrestrict_link(direct)
+    raise Exception('File link not available')
+
+
+def _resolve_pm_link(params):
+    from resources.lib.cloud import premiumize_api
+    # Fisier din Cloud Storage: link direct din item/details (fara transfer).
+    cloud_id = str(params.get('item_id') or '').strip()
+    src = str(params.get('src') or '').strip()
+    if not src and cloud_id:
+        link = premiumize_api.file_link(cloud_id)
+        if not link:
+            raise Exception('File link not available')
+        return link
+    if not src:
+        raise Exception('File link not available')
+    entries = premiumize_api.unrestrict_src(src)
+    if not entries:
+        raise Exception('File link not available')
+    file_id = str(params.get('file_id') or '').strip()
+    wanted = str(params.get('file_name') or '').strip()
+    for en in entries:
+        if wanted and str(en.get('name') or '') == wanted:
+            return en.get('link')
+    if file_id:
+        for en in entries:
+            if str(en.get('name') or '') == file_id:
+                return en.get('link')
+    video = [en for en in entries if str(en.get('name') or '').lower().endswith(_VIDEO_EXT)]
+    pool = video or entries
+    best = max(pool, key=lambda en: int(en.get('size') or 0))
+    return best.get('link')
+
+
+def _resolve_oc_link(params):
+    from resources.lib.cloud import offcloud_api
+    item_id = str(params.get('item_id') or '').strip()
+    if not item_id:
+        raise Exception('File link not available')
+    items, _t, _p = _cloud_payload(offcloud_api.user_cloud())
+    for it in items:
+        if isinstance(it, dict) and str(it.get('id') or '') == item_id:
+            url = offcloud_api.play_url(it)
+            if url:
+                return url
+    raise Exception('File link not available')
+
+
+def _resolve_link(params):
+    provider = params.get('provider', '')
+    if provider == 'rd':
+        return _resolve_rd_link(params)
+    if provider == 'pm':
+        return _resolve_pm_link(params)
+    if provider == 'oc':
+        return _resolve_oc_link(params)
+    mediatype = params.get('mediatype', 'torrents')
+    return _resolve_tb_link(mediatype, params.get('item_id', ''), params.get('file_id', '0'))
+
+
+def _play(params):
+    _ensure_globals()
+    name = params.get('name', '') or ''
+    file_name = params.get('file_name', '') or name
+
+    busy = xbmcgui.DialogProgressBG()
+    busy.create(provider_title('tmdb', name='TMDb Movies'), 'Resolving debrid link...')
+    url = None
+    err = ''
+    try:
+        url = _resolve_link(params)
+    except Exception as e:
+        err = str(e)
+    finally:
+        busy.close()
+
+    if not url:
+        _notify('Playback failed: ' + (err or 'no link'), ms=4000)
+        if _HANDLE >= 0:
+            xbmcplugin.setResolvedUrl(_HANDLE, False, xbmcgui.ListItem())
+        return
+
+    li = xbmcgui.ListItem(label=file_name, path=url)
+    li.setArt({'icon': _icon('debrid.png'), 'thumb': _icon('debrid.png')})
+    try:
+        tag = li.getVideoInfoTag()
+        tag.setTitle(file_name)
+    except Exception:
+        pass
+    li.setPath(url)
+
+    if _HANDLE >= 0:
+        if _kodi_major_local() >= 22:
+            xbmcplugin.setResolvedUrl(_HANDLE, True, li)
+        else:
+            xbmcplugin.setResolvedUrl(_HANDLE, True, li)
+            xbmc.Player().play(url, li)
+    else:
+        xbmc.Player().play(url, li)
+
+
+def _download(params):
+    _ensure_globals()
+    name = params.get('name', '') or ''
+    file_name = params.get('file_name', '') or name
+
+    busy = xbmcgui.DialogProgressBG()
+    busy.create(provider_title('tmdb', name='TMDb Movies'), 'Resolving debrid link...')
+    url = None
+    err = ''
+    try:
+        url = _resolve_link(params)
+    except Exception as e:
+        err = str(e)
+    finally:
+        busy.close()
+
+    if not url:
+        _notify('Download failed: ' + (err or 'no link'), ms=4000)
+        return
+
+    from resources.lib.playback.downloader import start_download_thread
+    try:
+        start_download_thread(url, title=file_name, year='', tmdb_id='debrid_' + str(params.get('item_id', '0')) + '_' + str(params.get('file_id', '') or params.get('item_id', '0')),
+                              c_type='movie', season=None, episode=None, release_name=file_name, provider_id='debrid')
+        _notify('Download started', icon=_icon('debrid.png'))
+    except Exception as e:
+        _notify(f'Download failed: {e}', ms=4000)
+
+
+def _clear_tb_cache():
+    try:
+        from resources.lib.cloud import torbox_api
+        torbox_api.clear_cloud_cache()
+    except Exception:
+        pass
+    _notify('TorBox cache cleared')
+    xbmc.executebuiltin('Container.Refresh')
+
+
+def _clear_rd_cache():
+    try:
+        from resources.lib.cloud import realdebrid_api
+        realdebrid_api.clear_cloud_cache()
+    except Exception:
+        pass
+    _notify('Real-Debrid cache cleared')
+    xbmc.executebuiltin('Container.Refresh')
+
+
+def _refresh():
+    _cache_del_prefix('tmdbmovies_tb_')
+    _cache_del_prefix('tmdbmovies_rd_')
+    _cache_del_prefix('tmdbmovies_pm_')
+    _cache_del_prefix('tmdbmovies_oc_')
+    xbmc.executebuiltin('Container.Refresh')
+
+
+def _migrate_status_labels():
+    try:
+        for _key_id, _st_id in (('torbox_api_key', 'torbox_status'), ('rd_api_key', 'rd_status'),
+                                ('pm_api_key', 'pm_status'), ('oc_api_key', 'oc_status')):
+            _key = (_ADDON.getSetting(_key_id) or '').strip()
+            _st = (_ADDON.getSetting(_st_id) or '').strip()
+            if _key and _key in _st:
+                _ADDON.setSetting(_st_id, 'Connected')
+            elif _st.startswith('Connected:'):
+                _ADDON.setSetting(_st_id, 'Connected')
+    except Exception:
+        pass
+
+
+def handle_debrid_action(params, handle, base_url, addon):
+    action = params.get('mode', params.get('action', ''))
+    if action not in DEBRID_ACTIONS:
+        try:
+            if int(handle) >= 0:
+                xbmcplugin.endOfDirectory(int(handle), succeeded=False)
+        except Exception:
+            pass
+        return False
+    _ensure_globals()
+    global _HANDLE, _BASE_URL, _ADDON
+    _HANDLE = handle
+    _BASE_URL = base_url
+    _ADDON = addon
+    _migrate_status_labels()
+    if action == 'debrid_menu':
+        _view_main()
+    elif action == 'debrid_torbox':
+        _view_torbox()
+    elif action == 'debrid_rd':
+        _view_rd()
+    elif action == 'debrid_tb_cloud':
+        _view_tb_cloud(params)
+    elif action == 'debrid_tb_folder':
+        _view_tb_folder(params)
+    elif action == 'debrid_tb_airlock':
+        _view_tb_airlock(params)
+    elif action == 'debrid_tb_account':
+        _view_tb_account()
+    elif action == 'debrid_rd_cloud':
+        _view_rd_cloud(params)
+    elif action == 'debrid_rd_folder':
+        _view_rd_folder(params)
+    elif action == 'debrid_rd_downloads':
+        _view_rd_downloads(params)
+    elif action == 'debrid_rd_account':
+        _view_rd_account()
+    elif action == 'debrid_premiumize':
+        _view_premiumize()
+    elif action == 'debrid_pm_cloud':
+        _view_pm_cloud(params)
+    elif action == 'debrid_pm_folder':
+        _view_pm_folder(params)
+    elif action == 'debrid_pm_storage':
+        _view_pm_storage(params)
+    elif action == 'debrid_pm_account':
+        _view_pm_account()
+    elif action == 'debrid_pm_retry':
+        _retry_pm_transfer(params)
+    elif action == 'debrid_pm_delete_transfer':
+        _delete_pm_transfer(params)
+    elif action == 'debrid_pm_clear_cache':
+        _clear_pm_cache()
+    elif action == 'debrid_set_pm_key':
+        _set_api_key('premiumize')
+    elif action == 'debrid_offcloud':
+        _view_offcloud()
+    elif action == 'debrid_oc_cloud':
+        _view_oc_cloud(params)
+    elif action == 'debrid_oc_folder':
+        _view_oc_folder(params)
+    elif action == 'debrid_oc_history':
+        _view_oc_history(params)
+    elif action == 'debrid_oc_account':
+        _view_oc_account()
+    elif action == 'debrid_oc_delete':
+        _delete_oc_request(params)
+    elif action == 'debrid_oc_clear_cache':
+        _clear_oc_cache()
+    elif action == 'debrid_set_oc_key':
+        _set_api_key('offcloud')
+    elif action == 'debrid_set_torbox_key':
+        _set_api_key('torbox')
+    elif action == 'debrid_set_rd_key':
+        _set_api_key('rd')
+    elif action == 'debrid_disconnect':
+        _disconnect(params.get('provider', ''))
+    elif action == 'debrid_tb_delete':
+        _delete_tb(params)
+    elif action == 'debrid_tb_toggle_airlock':
+        _toggle_tb_airlock(params)
+    elif action == 'debrid_rd_delete_torrent':
+        _delete_rd_torrent(params)
+    elif action == 'debrid_rd_delete_download':
+        _delete_rd_download(params)
+    elif action == 'debrid_tb_clear_cache':
+        _clear_tb_cache()
+    elif action == 'debrid_rd_clear_cache':
+        _clear_rd_cache()
+    elif action == 'debrid_play':
+        _play(params)
+    elif action == 'debrid_download':
+        _download(params)
+    elif action == 'debrid_refresh':
+        _refresh()
+    return True

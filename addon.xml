@@ -1,10 +1,10 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<addon id="plugin.video.tmdbmovies" version="1.1.205" name="[B][COLOR FF00CED1]TMDb [COLOR FFCCCCFF]Movies[/COLOR][/B]" provider-name="[B][COLOR FF6AFB92]Angelitto[/COLOR][/B]">
+<?xml version='1.0' encoding='utf-8'?>
+<addon id="plugin.video.tmdbmovies" version="1.1.310" name="[B][COLOR FF00CED1]TMDb [/COLOR][COLOR FFCCCCFF]Movies[/COLOR][/B]" provider-name="[B][COLOR FF6AFB92]Angelitto[/COLOR][/B]">
     <requires>
-        <import addon="xbmc.python" version="3.0.0"/>
-        <import addon="script.module.requests" version="2.22.0"/>
-        <import addon="script.module.resolveurl" version="5.0.0"/>
-        <import addon="inputstream.adaptive" version="19.0.0"/>
+        <import addon="xbmc.python" version="3.0.0" />
+        <import addon="script.module.requests" version="2.22.0" />
+        <import addon="script.module.resolveurl" version="5.0.0" />
+        <import addon="inputstream.adaptive" version="19.0.0" />
     </requires>
     
     <extension point="xbmc.python.pluginsource" library="resources/lib/router.py">
@@ -13,21 +13,22 @@
     
     <extension point="xbmc.service" library="resources/lib/service.py" />
 
-    <!-- MENIU CONTEXTUAL UNIFICAT -->
+    
     <extension point="kodi.context.item">
         <menu id="kodi.core.main">
  
-        <!-- ITEM 1: Add to Library -->
+        
             <item library="resources/lib/context/context_library.py">
                 <label>[B][COLOR yellow]Add to Library[/COLOR][/B]</label>
                 <visible>
+                    String.IsEqual(Window(10000).Property(TMDbMovies.LibraryContext),true) + 
                     !String.IsEmpty(ListItem.Title) +
                     [String.IsEqual(ListItem.DBTYPE,movie) | String.IsEqual(ListItem.DBTYPE,tvshow) | String.IsEqual(ListItem.DBTYPE,season) | String.IsEqual(ListItem.DBTYPE,episode) | !String.IsEmpty(ListItem.Property(mediatype))] +
                     !String.IsEmpty(Container.PluginName)
                 </visible>
             </item>
              
-            <!-- ITEM 2: TMDb INFO (Cu verificare setare ON/OFF) -->
+            
             <item library="resources/lib/context/context.py">
                 <label>[B][COLOR FF6AFB92]TMDb INFO[/COLOR][/B]</label>
                 <visible>
@@ -37,7 +38,7 @@
                 </visible>
             </item>
 
-            <!-- ITEM 3: Extended Info (ACUM CU VERIFICARE SETARE ON/OFF) -->
+            
             <item library="resources/lib/context/context_extended.py">
                 <label>[B][COLOR FF33CCFF]TMDb Extended INFO[/COLOR][/B]</label>
                 <visible>
@@ -47,7 +48,7 @@
                 </visible>
             </item>
 
-            <!-- ITEM 4: Play Trailer (GLOBAL) -->
+            
             <item library="resources/lib/context/context_trailer.py">
                 <label>[B][COLOR FF00CED1]TMDbM [COLOR FFF70D1A]Trailers[/COLOR][/B]</label>
                 <visible>

@@ -8,9 +8,12 @@ import sys
 import os
 import html
 import threading
+import random
+import time
 from urllib.parse import urlencode, quote
 from datetime import datetime, date
-from resources.lib import trakt_sync
+from resources.lib.providers import trakt_sync
+from resources.lib.providers import watched_provider
 
 # --- FIX EROARE LOG: Fortam ID-ul daca nu este detectat ---
 try:
@@ -26,7 +29,7 @@ except:
 ADDON_PATH = ADDON.getAddonInfo('path')
 
 try:
-    from resources.lib.config import API_KEY, IMG_BASE, BACKDROP_BASE
+    from resources.lib.core.config import API_KEY, IMG_BASE, BACKDROP_BASE
 except ImportError:
     API_KEY = "8ad3c21a92a64da832c559d58cc63ab4"
     # IMG_BASE este w500 (bun pentru postere principale)
@@ -77,15 +80,15 @@ def log(msg):
 # --- FUNCTII NOI PENTRU BUTOANE (Play, Library, Settings) ---
 def action_play_dialog(tmdb_id, media_type, season=None, episode=None, title=''):
     """
-    Gestionează meniul de acțiuni (Play/Browse/Search).
-    Fix: Culori personalizate și Text Bold.
+    Gestioneaza meniul de actiuni (Play/Browse/Search).
+    Fix: Culori personalizate si Text Bold.
     """
     s_id = str(tmdb_id)
     s_season = str(season) if season is not None else '1'
     s_episode = str(episode) if episode is not None else '1'
     s_title = str(title)
     
-    # Determinăm tipul corect pentru Căutare
+    # Determinam tipul corect pentru Cautare
     search_type_real = 'tv' if media_type in ['tv', 'season', 'episode'] else 'movie'
     
     # --- DEFINIRE CULORI ---
@@ -163,7 +166,7 @@ def action_play_dialog(tmdb_id, media_type, season=None, episode=None, title='')
         url = f"plugin://plugin.video.tmdbmovies/?mode=perform_search_query&query={quote(clean_title)}&type={search_type_real}"
         is_browsing = True
 
-    # EXECUȚIE PRIN THREAD
+    # EXECUTIE PRIN THREAD
     if url:
         xbmc.log(f"[ExtendedInfo] Executing via Thread: {url}", xbmc.LOGINFO)
         
@@ -183,65 +186,69 @@ def action_play_dialog(tmdb_id, media_type, season=None, episode=None, title='')
         t.start()
 
 def action_options_dialog(tmdb_id, media_type, season=None, episode=None, title=''):
-    """
-    Deschide meniul contextual direct în fereastra Extended Info.
-    Adaptat exact după meniul contextual principal (My Trakt, My TMDB, My Plays, etc).
-    """
-    # Extragem anul și imdb_id din fereastră pentru funcția 'My Plays'
+    # Extragem anul si imdb_id din fereastra pentru functia 'My Plays'
     imdb_id = xbmc.getInfoLabel('Window.Property(movie.imdbnumber)') or ''
     year = xbmc.getInfoLabel('Window.Property(movie.year)') or xbmc.getInfoLabel('Window.Property(year)') or ''
     
-    options = [
-        "[B][COLOR pink]My Trakt[/COLOR][/B]",
-        "[B][COLOR FF00CED1]My TMDB[/COLOR][/B]",
-        "[B][COLOR FFFF69B4]My Plays[/COLOR][/B]",
-        "[B][COLOR orange]Clear sources cache[/COLOR][/B]",
-        "[B][COLOR yellow]Add to My Favorites[/COLOR][/B]",
-        "[B][COLOR yellow]Remove from My Favorites[/COLOR][/B]",
-        "[B][COLOR gray]Settings (Addon)[/COLOR][/B]"
-    ]
-    
+    from resources.lib.core.config import ADDON
+    from resources.lib.api.tmdb_api import _allprov_colored
+    options = []
+    dispatch = []
+
+    def _add(label, mode):
+        options.append(label)
+        dispatch.append(mode)
+
+    if ADDON.getSetting('show_cm_trakt') != 'false':
+        _add("[B][COLOR pink]My Trakt[/COLOR][/B]", 'trakt_context_menu')
+    if ADDON.getSetting('show_cm_tmdb') != 'false':
+        _add("[B][COLOR FF00CED1]My TMDB[/COLOR][/B]", 'tmdb_context_menu')
+    if ADDON.getSetting('show_cm_mdblist') != 'false':
+        _add("[B][COLOR lightskyblue]My MDBList[/COLOR][/B]", 'mdblist_context_menu')
+    if ADDON.getSetting('show_cm_simkl') != 'false':
+        _add("[B][COLOR mediumpurple]My Simkl[/COLOR][/B]", 'simkl_context_menu')
+    if ADDON.getSetting('show_cm_punchplay') != 'false':
+        _add("[B][COLOR FFFF6600]My PunchPlay[/COLOR][/B]", 'punchplay_context_menu')
+    if ADDON.getSetting('all_providers_menu') == 'true':
+        _add(f"[B]{_allprov_colored('All Providers', (3, 3, 2, 3, 2), ('trakt', 'tmdb', 'mdblist', 'simkl', 'punchplay'))}[/B]", 'all_providers_context_menu')
+    if ADDON.getSetting('show_cm_my_plays') != 'false':
+        _add("[B][COLOR FFFF69B4]My Plays[/COLOR][/B]", 'show_my_plays_menu')
+    _add("[B][COLOR orange]Clear sources cache[/COLOR][/B]", 'clear_sources_context')
+    _add("[B][COLOR yellow]Add to My Favorites[/COLOR][/B]", 'add_favorite')
+    _add("[B][COLOR yellow]Remove from My Favorites[/COLOR][/B]", 'remove_favorite')
+    _add("[B][COLOR gray]Settings (Addon)[/COLOR][/B]", 'settings_addon')
+
     dialog = xbmcgui.Dialog()
     ret = dialog.contextmenu(options)
-    
-    if ret < 0: 
+
+    if ret < 0:
         return # Utilizatorul a anulat
-    
-    # 6. Settings Addon
-    if ret == 6:
+
+    if dispatch[ret] == 'settings_addon':
         xbmcaddon.Addon('plugin.video.tmdbmovies').openSettings()
         return
-        
+
     s_id = str(tmdb_id)
     addon_type = 'tvshow' if media_type == 'tv' else media_type
     base_url = "plugin://plugin.video.tmdbmovies/"
-    
-    # Dicționarul de bază pentru parametri
+
+    # Dictionarul de baza pentru parametri
     params = {
         'tmdb_id': s_id,
         'type': addon_type,
-        'title': title
+        'title': title,
+        'imdb_id': imdb_id
     }
     if season is not None: params['season'] = str(season)
     if episode is not None: params['episode'] = str(episode)
-    
-    # Asociem modul în funcție de opțiunea aleasă
-    if ret == 0:
-        params['mode'] = 'trakt_context_menu'
-    elif ret == 1:
-        params['mode'] = 'tmdb_context_menu'
-    elif ret == 2:
-        params['mode'] = 'show_my_plays_menu'
+
+    # Asociem modul in functie de optiunea aleasa
+    params['mode'] = dispatch[ret]
+    if dispatch[ret] == 'show_my_plays_menu':
         params['year'] = year
         params['imdb_id'] = imdb_id
-    elif ret == 3:
-        params['mode'] = 'clear_sources_context'
-    elif ret == 4:
-        params['mode'] = 'add_favorite'
-    elif ret == 5:
-        params['mode'] = 'remove_favorite'
-        
-    # Lansăm plugin-ul cu parametrii formatați (fără să închidem Extended Info)
+
+    # Lansam plugin-ul cu parametrii formatati (fara sa inchidem Extended Info)
     xbmc.executebuiltin(f"RunPlugin({base_url}?{urlencode(params)})")
 
 def action_refresh_trakt():
@@ -255,7 +262,7 @@ def get_tmdb_data(endpoint, params=None):
     params['language'] = 'en-US'
     
     try:
-        from resources.lib.config import get_plot_language_code, LANG_TO_TMDB, get_plot_img_lang
+        from resources.lib.core.config import get_plot_language_code, LANG_TO_TMDB, get_plot_img_lang
         lang_code = get_plot_language_code()
         is_non_en = lang_code != 'en'
         img_lang = get_plot_img_lang()
@@ -348,6 +355,502 @@ def get_youtube_api_data(query):
     xbmc.log("[YOUTUBE_DEBUG] All keys failed!", level=xbmc.LOGINFO)
     return []
 
+_YT_IOS_UA = 'com.google.ios.youtube/20.20.7 (iPhone16,2; U; CPU iOS 18_5_0 like Mac OS X)'
+_YT_SEARCH_CACHE = {}
+_YT_SEARCH_TTL = 604800
+
+
+def _yt_cache_get(query):
+    try:
+        hit = _YT_SEARCH_CACHE.get(query)
+        if hit and time.time() - hit[0] < _YT_SEARCH_TTL:
+            return hit[1]
+    except:
+        pass
+    try:
+        from resources.lib.core.cache import MainCache
+        data = MainCache().get('ytsearch_' + query)
+        if data:
+            try:
+                _YT_SEARCH_CACHE[query] = (time.time(), data)
+            except:
+                pass
+            return data
+    except:
+        pass
+    return None
+
+
+def _yt_cache_set(query, items):
+    try:
+        _YT_SEARCH_CACHE[query] = (time.time(), items)
+    except:
+        pass
+    try:
+        from resources.lib.core.cache import MainCache
+        MainCache().set('ytsearch_' + query, items, expiration=168)
+    except:
+        pass
+
+
+def search_youtube_innertube(query, max_results=25):
+    if not query:
+        return []
+    try:
+        cpn = ''.join(random.choice('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_') for _ in range(16))
+        payload = {
+            'context': {'client': {
+                'clientName': 'IOS',
+                'clientVersion': '20.20.7',
+                'deviceMake': 'Apple',
+                'deviceModel': 'iPhone16,2',
+                'osName': 'iOS',
+                'osVersion': '18.5.0.22F76',
+                'platform': 'MOBILE',
+                'hl': 'en',
+                'gl': 'US',
+            }},
+            'cpn': cpn,
+            'query': query,
+        }
+        headers = {
+            'Origin': 'https://m.youtube.com',
+            'User-Agent': _YT_IOS_UA,
+            'X-YouTube-Client-Name': '5',
+            'X-YouTube-Client-Version': '20.20.7',
+            'Content-Type': 'application/json',
+        }
+        r = requests.post('https://www.youtube.com/youtubei/v1/search?prettyPrint=false', data=json.dumps(payload), headers=headers, timeout=15)
+        body = r.json()
+    except Exception as e:
+        log(f"Innertube search error: {e}")
+        return []
+    out = []
+    seen_ids = set()
+
+    def push(info):
+        vid = (info.get('id') or '').strip()
+        if vid in seen_ids or not vid:
+            return
+        seen_ids.add(vid)
+        info['id'] = vid
+        info['title'] = (info.get('title') or '').strip()
+        out.append(info)
+        return len(out) >= max_results
+
+    def walk(node, cur=None):
+        if len(out) >= max_results:
+            return True
+        if isinstance(node, dict):
+            vr = node.get('videoRenderer')
+            if isinstance(vr, dict):
+                runs = (vr.get('title') or {}).get('runs') or []
+                t = ''.join(x.get('text', '') for x in runs) if runs else ((vr.get('title') or {}).get('simpleText') or '')
+                if push({'id': vr.get('videoId') or '', 'title': t}):
+                    return True
+            cvm_title = ''
+            try:
+                vd = (node.get('compactVideoModel') or {}).get('compactVideoData', {}).get('videoData', {})
+                if isinstance(vd, dict) and vd.get('dragAndDropUrl'):
+                    durl = vd.get('dragAndDropUrl') or ''
+                    vid = durl.split('watch?v=')[1].split('&')[0].split('#')[0] if 'watch?v=' in durl else ''
+                    md = vd.get('metadata') or {}
+                    vt = md.get('title') or ''
+                    if isinstance(vt, dict):
+                        runs = vt.get('runs') or []
+                        vt = ''.join(x.get('text', '') for x in runs) if runs else (vt.get('simpleText') or '')
+                    det = md.get('metadataDetails') or ''
+                    if isinstance(det, dict):
+                        runs = det.get('runs') or []
+                        det = ''.join(x.get('text', '') for x in runs) if runs else (det.get('simpleText') or '')
+                    views = ''
+                    published = ''
+                    if det and '\u00b7' in det:
+                        views, published = [x.strip() for x in det.split('\u00b7', 1)]
+                    th = vd.get('thumbnail') or {}
+                    srcs = th.get('image', {}).get('sources') or []
+                    thumb = srcs[0].get('url') if srcs else ''
+                    cvm_title = vt if isinstance(vt, str) else ''
+                    if push({'id': vid, 'title': vt, 'channel': md.get('byline') or '',
+                             'views_text': det, 'views': views, 'published': published,
+                             'duration': th.get('timestampText') or '', 'thumb': thumb}):
+                        return True
+            except Exception:
+                pass
+            try:
+                vd = ((node.get('videoWithContextData') or {}).get('videoData')) or {}
+                durl = vd.get('dragAndDropUrl') or ''
+                vid = durl.split('watch?v=')[1].split('&')[0].split('#')[0] if 'watch?v=' in durl else ''
+                if vid and len(vid) == 11:
+                    t = ''
+                    try:
+                        t = vd['lockupMetadata']['lockupMetadataViewModel']['title']['content'] or ''
+                    except Exception:
+                        pass
+                    ts = None
+                    try:
+                        ts = (vd.get('thumbnail') or {}).get('timestampText')
+                    except Exception:
+                        ts = None
+                    if push({'id': vid, 'title': t, 'duration': ts or ''}):
+                        return True
+            except Exception:
+                pass
+            cvm = node.get('compactVideoModel')
+            if isinstance(cvm, dict):
+                try:
+                    cur_title = cvm['compactVideoData']['videoData']['metadata']['title']
+                except Exception:
+                    cur_title = ''
+            else:
+                cur_title = (cur or {}).get('title', '')
+            w = node.get('watchEndpoint')
+            if isinstance(w, dict) and w.get('videoId'):
+                if push({'id': w['videoId'], 'title': cur_title or ''}):
+                    return True
+            for v in node.values():
+                if walk(v, cur):
+                    return True
+        elif isinstance(node, list):
+            for v in node:
+                if walk(v, cur):
+                    return True
+        return False
+
+    try:
+        contents = body['contents']['sectionListRenderer']['contents']
+    except Exception:
+        contents = None
+    if contents is None:
+        try:
+            contents = body['contents']['twoColumnSearchResultsRenderer']['primaryContents']['sectionListRenderer']['contents']
+        except Exception:
+            contents = []
+    try:
+        for sec in contents:
+            if walk(sec):
+                break
+    except Exception as e:
+        log(f"Innertube search parse error: {e}")
+    return out
+
+
+def _yt_valid_duration(ts):
+    try:
+        parts = str(ts or '').strip().split(':')
+        if len(parts) not in (2, 3):
+            return False
+        return all(p.isdigit() and p for p in parts)
+    except:
+        return False
+
+
+def get_youtube_related(video_id, max_results=10):
+    if not video_id:
+        return []
+    try:
+        cpn = ''.join(random.choice('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_') for _ in range(16))
+        payload = {
+            'context': {'client': {
+                'clientName': 'IOS',
+                'clientVersion': '20.20.7',
+                'deviceMake': 'Apple',
+                'deviceModel': 'iPhone16,2',
+                'osName': 'iOS',
+                'osVersion': '18.5.0.22F76',
+                'platform': 'MOBILE',
+                'hl': 'en',
+                'gl': 'US',
+            }},
+            'cpn': cpn,
+            'videoId': video_id,
+            'contentCheckOk': True,
+            'racyCheckOk': True,
+        }
+        headers = {
+            'Origin': 'https://m.youtube.com',
+            'User-Agent': _YT_IOS_UA,
+            'X-YouTube-Client-Name': '5',
+            'X-YouTube-Client-Version': '20.20.7',
+            'Content-Type': 'application/json',
+        }
+        r = requests.post('https://www.youtube.com/youtubei/v1/next?prettyPrint=false', data=json.dumps(payload), headers=headers, timeout=15)
+        body = r.json()
+    except Exception as e:
+        log(f"Innertube related error: {e}")
+        return []
+    out = []
+    seen_ids = set()
+    ts_map = {}
+
+    def push(info, ts=None):
+        vid = (info.get('id') or '').strip()
+        if vid in seen_ids or not vid:
+            return
+        seen_ids.add(vid)
+        info['id'] = vid
+        info['title'] = (info.get('title') or '').strip()
+        out.append(info)
+        ts_map[vid] = ts
+        return len(out) >= max_results
+
+    def walk(node, cur_title=''):
+        if len(out) >= max_results:
+            return True
+        if isinstance(node, dict):
+            for key in ('videoRenderer', 'compactVideoRenderer'):
+                vr = node.get(key)
+                if isinstance(vr, dict):
+                    vid = vr.get('videoId') or ''
+                    runs = (vr.get('title') or {}).get('runs') or []
+                    t = ''.join(x.get('text', '') for x in runs) if runs else ((vr.get('title') or {}).get('simpleText') or '')
+                    ts = None
+                    vw = ''
+                    dt = ''
+                    du = ''
+                    try:
+                        for ov in vr.get('thumbnailOverlays', []) or []:
+                            tos = (ov or {}).get('thumbnailOverlayTimeStatusRenderer')
+                            if isinstance(tos, dict):
+                                tx = tos.get('text')
+                                if isinstance(tx, dict):
+                                    oruns = tx.get('runs') or []
+                                    ts = ''.join(x.get('text', '') for x in oruns) if oruns else (tx.get('simpleText') or '')
+                                elif isinstance(tx, str):
+                                    ts = tx
+                                break
+                    except:
+                        ts = None
+                    try:
+                        vw = ((vr.get('viewCountText') or {}).get('simpleText')) or ''
+                    except:
+                        pass
+                    try:
+                        dt = ((vr.get('publishedTimeText') or {}).get('simpleText')) or ''
+                    except:
+                        pass
+                    try:
+                        du = ((vr.get('lengthText') or {}).get('simpleText')) or ''
+                    except:
+                        pass
+                    if push({'id': vid, 'title': t, 'views': vw, 'date': dt, 'duration': du or ts or ''}, ts):
+                        return True
+            vwd = node.get('videoWithContextData')
+            if isinstance(vwd, dict):
+                try:
+                    vd = vwd.get('videoData') or {}
+                    durl = vd.get('dragAndDropUrl') or ''
+                    vid = durl.split('watch?v=')[1].split('&')[0].split('#')[0] if 'watch?v=' in durl else ''
+                    if len(vid) != 11:
+                        vid = ''
+                    t = ''
+                    try:
+                        t = vd['lockupMetadata']['lockupMetadataViewModel']['title']['content'] or ''
+                    except Exception:
+                        pass
+                    if not t:
+                        try:
+                            t = vwd['onTap']['innertubeCommand']['coWatchWatchEndpointWrapperCommand']['videoTitle'] or ''
+                        except Exception:
+                            pass
+                    ts = None
+                    try:
+                        ts = (vd.get('thumbnail') or {}).get('timestampText')
+                    except:
+                        ts = None
+                    ch = ''
+                    vw = ''
+                    dt = ''
+                    try:
+                        rows = vd['lockupMetadata']['lockupMetadataViewModel']['metadata']['contentMetadataViewModel']['metadataRows'] or []
+                        _texts = []
+                        for _row in rows:
+                            for _mp in (_row.get('metadataParts') or []):
+                                _c = ((_mp.get('text') or {}).get('content')) or ''
+                                if _c:
+                                    _texts.append(_c.strip())
+                        for _tx in _texts:
+                            if '\u00b7' in _tx:
+                                _pp = [_x.strip() for _x in _tx.split('\u00b7')]
+                                if len(_pp) >= 3:
+                                    ch, vw, dt = _pp[0], _pp[1], _pp[2]
+                                elif len(_pp) == 2:
+                                    vw, dt = _pp
+                                break
+                        if not vw:
+                            for _tx in _texts:
+                                if 'view' in _tx.lower():
+                                    vw = _tx
+                                    break
+                        if not ch:
+                            try:
+                                ch = vwd['onTap']['innertubeCommand']['coWatchWatchEndpointWrapperCommand']['ownerDisplayName'] or ''
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+                    if vid and push({'id': vid, 'title': t, 'channel': ch, 'views': vw, 'date': dt, 'duration': ts or ''}, ts):
+                        return True
+                except Exception:
+                    pass
+            cvm = node.get('compactVideoModel')
+            if isinstance(cvm, dict):
+                try:
+                    cur_title = cvm['compactVideoData']['videoData']['metadata']['title']
+                except Exception:
+                    cur_title = ''
+            w = node.get('watchEndpoint')
+            if isinstance(w, dict) and w.get('videoId'):
+                if push({'id': w['videoId'], 'title': cur_title or ''}):
+                    return True
+            for v in node.values():
+                if walk(v, cur_title):
+                    return True
+        elif isinstance(node, list):
+            for v in node:
+                if walk(v, cur_title):
+                    return True
+        return False
+
+    try:
+        sections = body['contents']['twoColumnWatchNextResults']['secondaryResults']['secondaryResults']['results']
+    except Exception:
+        sections = []
+    if not sections:
+        try:
+            sections = []
+            for sec in body['contents']['singleColumnWatchNextResults']['results']['results']['contents']:
+                if isinstance(sec, dict) and 'itemSectionRenderer' in sec:
+                    sections.extend(sec['itemSectionRenderer'].get('contents', []))
+        except Exception:
+            sections = []
+    try:
+        for sec in sections:
+            if walk(sec):
+                break
+    except Exception as e:
+        log(f"Innertube related parse error: {e}")
+    good = [d for d in out if ts_map.get(d.get('id')) is None or _yt_valid_duration(ts_map.get(d.get('id')))]
+    if not good:
+        good = out
+    log(f"Innertube related OK: {len(good)} videos ({len(out) - len(good)} without duration skipped).")
+    return good
+
+
+def get_youtube_search_results(query, max_results=25):
+    if not query:
+        return []
+    cached = _yt_cache_get(query)
+    if cached is not None:
+        return cached
+    found = search_youtube_innertube(query, max_results)
+    if found:
+        log(f"Innertube search OK: {len(found)} videos.")
+        items = [{'id': {'videoId': d.get('id')}, 'snippet': {'title': d.get('title', ''), 'channelTitle': d.get('channel', ''), 'thumbnails': {'high': {'url': d.get('thumb') or 'https://img.youtube.com/vi/' + d.get('id', '') + '/mqdefault.jpg'}}, 'publishedAt': ''}} for d in found]
+        _yt_cache_set(query, items)
+        return items
+    items = get_youtube_api_data(query)
+    if items:
+        _yt_cache_set(query, items)
+    return items
+
+def _yt_ts_to_seconds(ts):
+    try:
+        parts = [int(x) for x in str(ts or '').strip().split(':')]
+        if len(parts) == 2:
+            return parts[0] * 60 + parts[1]
+        if len(parts) == 3:
+            return parts[0] * 3600 + parts[1] * 60 + parts[2]
+    except:
+        pass
+    return 0
+
+
+_YT_META_CACHE = {}
+_YT_META_TTL = 604800
+
+
+def get_youtube_video_meta(video_id):
+    if not video_id:
+        return {}
+    try:
+        hit = _YT_META_CACHE.get(video_id)
+        if hit and time.time() - hit[0] < _YT_META_TTL:
+            return hit[1]
+    except:
+        pass
+    try:
+        from resources.lib.core.cache import MainCache
+        data = MainCache().get('ytmeta_' + video_id)
+        if data:
+            try:
+                _YT_META_CACHE[video_id] = (time.time(), data)
+            except:
+                pass
+            return data
+    except:
+        pass
+    meta = {}
+    try:
+        cpn = ''.join(random.choice('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_') for _ in range(16))
+        payload = {
+            'context': {'client': {
+                'clientName': 'IOS',
+                'clientVersion': '20.20.7',
+                'deviceMake': 'Apple',
+                'deviceModel': 'iPhone16,2',
+                'osName': 'iOS',
+                'osVersion': '18.5.0.22F76',
+                'platform': 'MOBILE',
+                'hl': 'en',
+                'gl': 'US',
+            }},
+            'cpn': cpn,
+            'videoId': video_id,
+            'contentCheckOk': True,
+            'racyCheckOk': True,
+        }
+        headers = {
+            'Origin': 'https://m.youtube.com',
+            'User-Agent': _YT_IOS_UA,
+            'X-YouTube-Client-Name': '5',
+            'X-YouTube-Client-Version': '20.20.7',
+            'Content-Type': 'application/json',
+        }
+        r = requests.post('https://www.youtube.com/youtubei/v1/player?prettyPrint=false', data=json.dumps(payload), headers=headers, timeout=15)
+        body = r.json()
+        vd = (body.get('videoDetails')) or {}
+        try:
+            dur = int(vd.get('lengthSeconds') or 0)
+        except:
+            dur = 0
+        meta = {'description': (vd.get('shortDescription') or '').strip(),
+                'channel': vd.get('author') or '',
+                'channel_id': vd.get('channelId') or '',
+                'duration_sec': dur}
+        try:
+            mf = (body.get('microformat') or {}).get('playerMicroformatRenderer') or {}
+            for k in ('publishDate', 'uploadDate'):
+                if mf.get(k):
+                    meta['published_date'] = str(mf[k])[:10]
+                    break
+        except:
+            pass
+    except Exception as e:
+        log(f"Innertube meta error: {e}")
+        return {}
+    try:
+        _YT_META_CACHE[video_id] = (time.time(), meta)
+    except:
+        pass
+    try:
+        from resources.lib.core.cache import MainCache
+        MainCache().set('ytmeta_' + video_id, meta, expiration=168)
+    except:
+        pass
+    return meta
+
+
 def format_money(val):
     if not val: return ''
     try:
@@ -376,22 +879,16 @@ def format_money_short(val):
 def format_date(date_str):
     if not date_str: return ''
     try:
-        # Converteste din YYYY-MM-DD in DD.MM.YYYY fara datetime / strptime
-        parts = str(date_str).strip().split('-')
-        if len(parts) == 3:
-            return f"{parts[2]}.{parts[1]}.{parts[0]}"
-        return date_str
+        from resources.lib.core.config import _fmt_dmy
+        return _fmt_dmy(date_str)
     except:
         return date_str
 
 def format_date_short(date_str):
     if not date_str: return ''
     try:
-        # Converteste din YYYY-MM-DD in DD.MM.YYYY fara datetime / strptime
-        parts = str(date_str).strip().split('-')
-        if len(parts) == 3:
-            return f"{parts[2]}.{parts[1]}.{parts[0]}"
-        return date_str
+        from resources.lib.core.config import _fmt_dmy
+        return _fmt_dmy(date_str)
     except:
         return date_str
 
@@ -597,7 +1094,7 @@ def show_full_image(window, list_id):
 # ---------------------------------------------------------
 
 class SeasonInfo(xbmcgui.WindowXMLDialog):
-    """Pagină pentru informații despre un sezon"""
+    """Pagina pentru informatii despre un sezon"""
     
     def __init__(self, *args, **kwargs):
         super(SeasonInfo, self).__init__(*args)
@@ -629,7 +1126,7 @@ class SeasonInfo(xbmcgui.WindowXMLDialog):
             {'append_to_response': 'credits,images,videos', 'include_video_language': 'en,null'}
         )
         
-        # FALLBACK: Dacă sezonul nu există, deschidem info de SERIAL
+        # FALLBACK: Daca sezonul nu exista, deschidem info de SERIAL
         if not self.meta or self.meta.get('success') == False:
             log(f"[SeasonInfo] Season {self.season_num} not found, falling back to TV show")
             self.close()
@@ -670,7 +1167,7 @@ class SeasonInfo(xbmcgui.WindowXMLDialog):
         tmdb_videos = self.meta.get('videos', {}).get('results', [])
         has_trailer = any(v.get('type') in ['Trailer', 'Teaser'] for v in tmdb_videos)
         
-        # Pasul 2: DEEP SCAN REGIONAL (Dacă nu avem trailer)
+        # Pasul 2: DEEP SCAN REGIONAL (Daca nu avem trailer)
         if not tmdb_videos or not has_trailer:
             log("[ExtendedInfo] Missing trailer. Initiating Regional Deep Scan...")
             
@@ -696,7 +1193,11 @@ class SeasonInfo(xbmcgui.WindowXMLDialog):
             
             for locale in target_locales:
                 try:
-                    deep_url = (f"{base_api}/{self.media_type}/{self.tmdb_id}/videos"
+                    m_type = str(getattr(self, 'media_type', '') or '')
+                    if m_type not in ('movie', 'tv'):
+                        m_type = 'tv' if getattr(self, 'season_num', None) is not None else 'movie'
+                    vid_id = getattr(self, 'tmdb_id', None) or getattr(self, 'tv_id', None) or ''
+                    deep_url = (f"{base_api}/{m_type}/{vid_id}/videos"
                                 f"?api_key={API_KEY}"
                                 f"&language={locale}"
                                 f"&include_video_language={safe_langs}")
@@ -759,7 +1260,7 @@ class SeasonInfo(xbmcgui.WindowXMLDialog):
             else:
                 secondary_list.append(video_obj)
         
-        # Sortare: Limba originală sus
+        # Sortare: Limba originala sus
         if primary_list:
             orig_lang = self.meta.get('original_language', 'en')
             def smart_sort(x):
@@ -771,10 +1272,10 @@ class SeasonInfo(xbmcgui.WindowXMLDialog):
             primary_list.sort(key=smart_sort)
         
         # =========================================================================
-        # PLAN B: Google YouTube API (în rândul "YouTube Videos", mereu)
+        # PLAN B: Google YouTube API (in randul "YouTube Videos", mereu)
         # =========================================================================
         search_query = f"{self.title_text} {year} trailer"
-        yt_results = get_youtube_api_data(search_query)
+        yt_results = get_youtube_search_results(search_query)
         
         if yt_results:
             yt_list = []
@@ -799,7 +1300,7 @@ class SeasonInfo(xbmcgui.WindowXMLDialog):
                     'thumb': snippet.get('thumbnails', {}).get('high', {}).get('url', ''),
                     'published_at': snippet.get('publishedAt', '')
                 })
-            secondary_list.extend(yt_list)  # TOATE rezultatele YouTube în rândul 2
+            secondary_list.extend(yt_list)  # TOATE rezultatele YouTube in randul 2
         
         # =========================================================================
         # PLAN C: YouTube search direct cu yt-dlp
@@ -985,7 +1486,7 @@ class SeasonInfo(xbmcgui.WindowXMLDialog):
                 li.setProperty('rating', str(ep.get('vote_average', 0)))
                 li.setProperty('Premiered', air_date)
                 
-                if trakt_sync.is_episode_watched(self.tv_id, self.season_num, ep_num):
+                if watched_provider.is_episode_watched(self.tv_id, self.season_num, ep_num):
                     li.setProperty('PlayCount', '1')
                     li.setProperty('Overlay', 'Watched')
                     v_tag.setPlaycount(1)
@@ -999,7 +1500,7 @@ class SeasonInfo(xbmcgui.WindowXMLDialog):
             log(f"Error filling episode list: {e}")
 
     def fill_video_list(self, list_id, videos):
-        # --- FUNCȚIE VIDEO SEZON (MODIFICATĂ PENTRU GOOGLE API) ---
+        # --- FUNCTIE VIDEO SEZON (MODIFICATA PENTRU GOOGLE API) ---
         try:
             if not control_exists(self, list_id): return
             ctl = self.getControl(list_id)
@@ -1139,7 +1640,7 @@ class SeasonInfo(xbmcgui.WindowXMLDialog):
 
 
 class EpisodeInfo(xbmcgui.WindowXMLDialog):
-    """Pagină pentru informații despre un episod"""
+    """Pagina pentru informatii despre un episod"""
     
     def __init__(self, *args, **kwargs):
         super(EpisodeInfo, self).__init__(*args)
@@ -1164,16 +1665,16 @@ class EpisodeInfo(xbmcgui.WindowXMLDialog):
                 {'append_to_response': 'credits,images,videos', 'include_video_language': 'en,null'}
             )
             
-            # FALLBACK: Dacă episodul nu există, deschidem info de SERIAL
+            # FALLBACK: Daca episodul nu exista, deschidem info de SERIAL
             if not self.meta or self.meta.get('success') == False:
                 log(f"[EpisodeInfo] Episode S{self.season_num}E{self.episode_num} not found, falling back to TV show")
                 self.close()
                 
-                # Lansăm dialogul pentru serial în loc de episod
+                # Lansam dialogul pentru serial in loc de episod
                 try:
-                    # Închidem acest dialog și deschidem TVShowInfo
+                    # Inchidem acest dialog si deschidem TVShowInfo
                     from resources.lib.context.extended_info_mod import run_extended_info
-                    xbmc.sleep(100)  # Mică pauză pentru a permite închiderea
+                    xbmc.sleep(100)  # Mica pauza pentru a permite inchiderea
                     run_extended_info(self.tv_id, 'tv', season=None, episode=None, tv_name=self.tv_name)
                 except Exception as e:
                     log(f"[EpisodeInfo] Fallback error: {e}")
@@ -1247,8 +1748,6 @@ class EpisodeInfo(xbmcgui.WindowXMLDialog):
                 self.setProperty('movie.poster', still)
                 self.setProperty('movie.fanart', still)
                 self.setProperty('fanart', still)
-                # COMENTAM linia veche
-                # self.setProperty('ImageFilter', still)
             
             # --- MODIFICARE BACKGROUND EPISOD ---
             texture_path = os.path.join(ADDON_PATH, 'resources', 'skins', 'Default', 'media', 'texture.png')
@@ -1395,7 +1894,7 @@ class ExtendedInfo(xbmcgui.WindowXMLDialog):
         
         endpoint = f"{self.media_type}/{self.tmdb_id}"
         
-        # LIMBI (scurt, lista lungă e respinsă de API)
+        # LIMBI (scurt, lista lunga e respinsa de API)
         all_langs = "en,null"
         
         params = {
@@ -1413,7 +1912,7 @@ class ExtendedInfo(xbmcgui.WindowXMLDialog):
         self.plot_text = self.meta.get('overview', '')
         self.title_text = self.meta.get('title') or self.meta.get('name', '')
         
-        # --- LOGICA COLECȚIEI ---
+        # --- LOGICA COLECTIEI ---
         self.collection_items = []
         if self.media_type == 'movie' and self.meta.get('belongs_to_collection'):
             coll_id = self.meta['belongs_to_collection']['id']
@@ -1484,9 +1983,15 @@ class ExtendedInfo(xbmcgui.WindowXMLDialog):
             base_api = "https://api.themoviedb.org/3"
             backup_videos = []
             
+            # Defensiv (paritate cu SeasonInfo): rezolvam media_type/tmdb_id sigur
+            m_type = str(getattr(self, 'media_type', '') or '')
+            if m_type not in ('movie', 'tv'):
+                m_type = 'tv' if getattr(self, 'season_num', None) is not None else 'movie'
+            vid_id = getattr(self, 'tmdb_id', None) or getattr(self, 'tv_id', None) or ''
+            
             for locale in target_locales:
                 try:
-                    deep_url = (f"{base_api}/{self.media_type}/{self.tmdb_id}/videos"
+                    deep_url = (f"{base_api}/{m_type}/{vid_id}/videos"
                                 f"?api_key={API_KEY}"
                                 f"&language={locale}"
                                 f"&include_video_language={safe_langs}")
@@ -1555,10 +2060,10 @@ class ExtendedInfo(xbmcgui.WindowXMLDialog):
             primary_list.sort(key=smart_sort)
         
         # =========================================================================
-        # PLAN B: Google YouTube API (în rândul "YouTube Videos", mereu)
+        # PLAN B: Google YouTube API (in randul "YouTube Videos", mereu)
         # =========================================================================
         search_query = f"{self.title_text} {year} trailer"
-        yt_results = get_youtube_api_data(search_query)
+        yt_results = get_youtube_search_results(search_query)
         
         if yt_results:
             yt_list = []
@@ -1704,7 +2209,7 @@ class ExtendedInfo(xbmcgui.WindowXMLDialog):
         elif genres_str:
             final_tagline = f"[COLOR FF00CED1]{genres_str}[/COLOR]"
 
-        # --- PROPRIETĂȚI COMPLETE DIAMOND INFO ---
+        # --- PROPRIETATI COMPLETE DIAMOND INFO ---
         props = {
             'title': title, 'Title': title,
             'originaltitle': self.meta.get('original_title') or self.meta.get('original_name', title), 
@@ -1840,11 +2345,11 @@ class ExtendedInfo(xbmcgui.WindowXMLDialog):
                 
                 playcount = 0
                 if media_type == 'movie':
-                    if trakt_sync.is_movie_watched(tmdb_id_str):
+                    if watched_provider.is_movie_watched(tmdb_id_str):
                         playcount = 1
                 elif media_type == 'tv':
                     tag.setTvShowTitle(label)
-                    watched_eps = trakt_sync.get_episode_watched_count(tmdb_id_str)
+                    watched_eps = watched_provider.get_episode_watched_count(tmdb_id_str)
                     total_eps = trakt_sync.get_tv_meta_from_db(tmdb_id_str)
                     if total_eps == 0 and watched_eps > 0:
                         try:
@@ -1883,12 +2388,16 @@ class ExtendedInfo(xbmcgui.WindowXMLDialog):
 
     def fill_season_list(self, list_id, seasons):
         try:
+            from resources.lib.core.config import ADDON as _cfg_addon
+            _show_specials = _cfg_addon.getSetting('show_specials') == 'true'
             ctl = self.getControl(list_id)
             ctl.reset()
             list_items = []
 
             for s in seasons:
                 season_num = s.get('season_number', 0)
+                if season_num == 0 and not _show_specials:
+                    continue
                 ep_count = s.get('episode_count', 0)
                 
                 # --- MODIFICARE: Titlu BOLD ---
@@ -1916,7 +2425,7 @@ class ExtendedInfo(xbmcgui.WindowXMLDialog):
                 li.setProperty('DBTYPE', 'season')
                 
                 # Logica Bifa Sezon (Ramane la fel)
-                watched_eps = trakt_sync.get_episode_watched_count(self.tmdb_id, season_num)
+                watched_eps = watched_provider.get_season_watched_count(self.tmdb_id, season_num)
                 unwatched = max(0, ep_count - watched_eps)
                 
                 li.setProperty('WatchedEpisodes', str(watched_eps))
@@ -2257,10 +2766,10 @@ class ActorInfo(xbmcgui.WindowXMLDialog):
                 playcount = 0
                 
                 if m_type == 'movie':
-                    if trakt_sync.is_movie_watched(tmdb_id_str): playcount = 1
+                    if watched_provider.is_movie_watched(tmdb_id_str): playcount = 1
                 else:
                     tag.setTvShowTitle(label)
-                    watched_eps = trakt_sync.get_episode_watched_count(tmdb_id_str)
+                    watched_eps = watched_provider.get_episode_watched_count(tmdb_id_str)
                     total_eps = trakt_sync.get_tv_meta_from_db(tmdb_id_str)
                     if total_eps == 0 and watched_eps > 0:
                         try:
@@ -2302,12 +2811,9 @@ class ActorInfo(xbmcgui.WindowXMLDialog):
     def fill_actor_youtube_videos(self, list_id, actor_name, popular_movies):
         # --- LOGICA VIDEO ACTOR: INTERVIURI & BEST OF (GOOGLE API) ---
         try:
-            # IMPORTANT: Verificarea controlului trebuie facuta pe thread-ul principal
-            # Dar cum suntem in thread secundar, riscam sa nu il gaseasca.
-            # Totusi, in Kodi Python, getControl merge si din thread de obicei.
             
             search_query = f"{actor_name} interview best moments"
-            results = get_youtube_api_data(search_query)
+            results = get_youtube_search_results(search_query)
             
             list_items = []
             if results:
@@ -2339,9 +2845,7 @@ class ActorInfo(xbmcgui.WindowXMLDialog):
                     li.setArt({'thumb': icon, 'icon': icon})
                     li.setProperty('youtube_id', video_id)
                     list_items.append(li)
-            
-            # Adaugarea itemelor in lista trebuie facuta cu grija.
-            # Daca fereastra s-a inchis intre timp, va da eroare, asa ca folosim try-except
+
             if control_exists(self, list_id):
                 ctl = self.getControl(list_id)
                 ctl.addItems(list_items)
@@ -2495,7 +2999,10 @@ def run_extended_info(tmdb_id, media_type='movie', clear_stack=True, season=None
                     t = meta.get('title') or meta.get('name')
                     g = ' / '.join([x['name'] for x in meta.get('genres', [])]) if meta.get('genres') else None
                     del wd
-                    play_youtube_and_return(next_data, title=t, genre=g)
+                    play_youtube_and_return(next_data, title=t, genre=g,
+                                            plot=_trailer_info_plot(meta, g)[0], studio=_trailer_info_plot(meta, g)[1] or None,
+                                            tmdb_id=current.get('tmdb_id'),
+                                            dbtype=current.get('media_type'))
                     continue
                 else:
                     handle_next_info(wd.next_info)
@@ -2517,7 +3024,10 @@ def run_extended_info(tmdb_id, media_type='movie', clear_stack=True, season=None
                     t = meta.get('title') or meta.get('name')
                     g = ' / '.join([x['name'] for x in meta.get('genres', [])]) if meta.get('genres') else None
                     del wd
-                    play_youtube_and_return(next_data, title=t, genre=g)
+                    play_youtube_and_return(next_data, title=t, genre=g,
+                                            plot=_trailer_info_plot(meta, g)[0], studio=_trailer_info_plot(meta, g)[1] or None,
+                                            tmdb_id=current.get('tmdb_id'),
+                                            dbtype=current.get('media_type'))
                     continue
                 else:
                     handle_next_info(wd.next_info)
@@ -2538,11 +3048,21 @@ def run_extended_info(tmdb_id, media_type='movie', clear_stack=True, season=None
             elif wd.next_info:
                 next_type, next_data = wd.next_info
                 if next_type == 'youtube_play':
-                    meta = getattr(wd, 'meta', {})
+                    meta = getattr(wd, 'meta', {}) or {}
+                    # Sezonul TMDb nu are tagline/genuri: le completam din
+                    # serial, altfel trailerul pleaca fara motto+gen in OSD.
+                    _tg, _gn = _show_tagline_genres(current.get('tv_id'))
+                    if _tg and not meta.get('tagline'):
+                        meta['tagline'] = _tg
+                    if _gn and not meta.get('genres'):
+                        meta['genres'] = [{'name': x.strip()} for x in _gn.split(',')]
                     t = meta.get('title') or meta.get('name') or current.get('tv_name')
                     g = ' / '.join([x['name'] for x in meta.get('genres', [])]) if meta.get('genres') else None
                     del wd
-                    play_youtube_and_return(next_data, title=t, genre=g)
+                    play_youtube_and_return(next_data, title=t, genre=g,
+                                            plot=_trailer_info_plot(meta, g)[0], studio=_trailer_info_plot(meta, g)[1] or None,
+                                            tmdb_id=current.get('tv_id'),
+                                            dbtype='tv' if current.get('type') == 'season' else None)
                     continue
                 log(f"[RunLoop] Season Next Info: {wd.next_info}")
                 handle_next_info_season(wd.next_info, current)
@@ -2572,21 +3092,55 @@ def run_extended_info(tmdb_id, media_type='movie', clear_stack=True, season=None
     
     NAVIGATION_STACK.clear()
 
-def play_youtube_and_return(yt_id, title=None, genre=None):
-    from resources.lib.trailer_player import get_trailer_mode, get_trailer_url
+_season_show_cache = {}
+
+
+def _show_tagline_genres(tv_id):
+    """Tagline + genurile SERIALULUI. Sezonul TMDb (tv/{id}/season/{n}) nu are
+    campuri de tagline/genres, deci antetul 'motto | gen' pentru OSD-ul
+    trailerului nu s-ar putea construi din meta-ul sezonului."""
+    try:
+        if tv_id not in _season_show_cache:
+            _season_show_cache[tv_id] = get_tmdb_data(f"tv/{tv_id}") or {}
+        d = _season_show_cache[tv_id]
+        tg = (d.get('tagline') or '').strip()
+        gn = ', '.join([g.get('name') for g in (d.get('genres') or []) if g.get('name')])
+        return tg, gn
+    except Exception:
+        return '', ''
+
+
+def _trailer_info_plot(meta, genres_str):
+    tagline = ((meta or {}).get('tagline') or '').strip()
+    overview = ((meta or {}).get('overview') or '').strip()
+    head = ''
+    if tagline and genres_str:
+        head = f"[B][COLOR yellow]{tagline}[/COLOR][/B] | [B][COLOR FF00CED1]{genres_str}[/COLOR][/B]\n"
+    elif tagline:
+        head = f"[B][COLOR yellow]{tagline}[/COLOR][/B]\n"
+    elif genres_str:
+        head = f"[B][COLOR FF00CED1]{genres_str}[/COLOR][/B]\n"
+    studio = ''
+    try:
+        cos = ((meta or {}).get('production_companies') or []) or ((meta or {}).get('networks') or [])
+        if cos and isinstance(cos, list) and cos[0].get('name'):
+            studio = cos[0]['name']
+    except:
+        pass
+    return head + overview, studio
+
+
+def play_youtube_and_return(yt_id, title=None, genre=None, tmdb_id=None, dbtype=None, year=None, plot=None, studio=None):
+    from resources.lib.playback.trailer_player import get_trailer_mode, get_trailer_url
     mode = get_trailer_mode()
     if mode == 'youtube_plugin':
         url = f"plugin://plugin.video.youtube/play/?video_id={yt_id}"
     else:
-        url = get_trailer_url(yt_id)
-        if title or genre:
-            params = {}
-            if title:
-                params['title'] = title
-            if genre:
-                params['genre'] = genre
+        url = get_trailer_url(yt_id, tmdb_id=tmdb_id, dbtype=dbtype,
+                              title=title, year=year, plot=plot, studio=studio)
+        if genre:
             from urllib.parse import urlencode
-            url = '{}&{}'.format(url, urlencode(params))
+            url = '{}&{}'.format(url, urlencode({'genre': genre}))
     li = xbmcgui.ListItem(path=url)
     if title:
         tag = li.getVideoInfoTag()
