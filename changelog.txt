@@ -1,3 +1,10 @@
+1.1.310.1 (avinashiitd fork)
+- Fix HubCloud links (MoviesDrive, HDHub4u, ...) always failing: parse_qsl was not imported
+- Fix crash in "Clear sources cache" error handling (undefined log)
+- Fix undefined release_group in legacy Torrentio scraper
+- Remove reference to undefined season_session in Up Next
+- Fix malformed XML comments in info dialog skins
+
 1.1.310
 - Fixed TMDbM Trailers autoplay UP Next
 

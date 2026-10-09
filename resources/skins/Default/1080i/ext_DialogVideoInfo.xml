@@ -284,7 +284,7 @@
 							<width>1900</width>
 							<height>25</height>
 							<aligny>center</aligny>
-							<!---Nume colectii--->
+							<!-- Nume colectii -->
 							<textcolor>FFFFFFFF</textcolor>
 							<font>font14</font>
 							<label>[B]$INFO[Window.Property(movie.set.label)]$INFO[Container(250).NumItems, (,)][/B]</label>
@@ -295,7 +295,7 @@
 							<width>700</width>
 							<height>300</height>
 							<label fallback="N / A">[B]$INFO[Window.Property(movie.set.overview)][/B]</label>
-							<!---Color text plot pe colectii--->
+							<!-- Color text plot pe colectii -->
 							<textcolor>FFFFFFFF</textcolor>
 							<font>font12</font>
 							<autoscroll delay="10000" time="2000" repeat="10000">true</autoscroll>
@@ -321,7 +321,7 @@
 							<width>500</width>
 							<height>25</height>
 							<aligny>center</aligny>
-							<!---Episod index (nr)--->
+							<!-- Episod index (nr) -->
 							<textcolor>FFFFFFFF</textcolor>
 							<font>font14</font>
 							<label>[B]Episode index $INFO[Container(2000).NumItems,(,)][/B]</label>
@@ -386,7 +386,7 @@
 										<height>100</height>
 										<posy>227</posy>
 										<align>center</align>
-										<!---Nume episoade neselectate--->
+										<!-- Nume episoade neselectate -->
 										<textcolor>FFFFFFFF</textcolor>
 										<font>font12</font>
 										<label>$INFO[ListItem.Episode,[B],[/B]]$INFO[ListItem.Label,[B].[/B] ]$INFO[ListItem.Property(release_date),[CR][COLOR FFAAAAAA],[/COLOR]]</label>
@@ -437,7 +437,7 @@
 										<height>100</height>
 										<posy>227</posy>
 										<align>center</align>
-										<!---Nume episod selectat--->
+										<!-- Nume episod selectat -->
 										<textcolor>FF33CCFF</textcolor>
 										<font>font12</font>
 										<label>$INFO[ListItem.Episode,[B],[/B]]$INFO[ListItem.Label,[B].[/B] ]$INFO[ListItem.Property(release_date),[CR][COLOR FFAAAAAA],[/COLOR]]</label>
@@ -455,7 +455,7 @@
 							<width>1900</width>
 							<height>25</height>
 							<aligny>center</aligny>
-							<!---Sezoane (nr)--->
+							<!-- Sezoane (nr) -->
 							<textcolor>FFFFFFFF</textcolor>
 							<font>font14</font>
 							<label>[B]Seasons$INFO[Container(250).NumItems, (,)][/B]</label>
@@ -589,7 +589,7 @@
 											<height>84</height>
 											<posy>10</posy>
 											<posx>0</posx>
-											<!---Steluta pe poster, am filmul--->
+											<!-- Steluta pe poster, am filmul -->
 											<texture flipx="true">flags/local.png</texture>
 											<visible>!String.IsEmpty(ListItem.Property(DBID))</visible>
 										</control>
@@ -607,7 +607,7 @@
 											<posy>310</posy>
 											<width>84</width>
 											<height>25</height>
-											<!---Movies-Name year on collections--->
+											<!-- Movies-Name year on collections -->
 											<textcolor>FFFFFFFF</textcolor>
 											<font>font12</font>
 											<aligny>center</aligny>
@@ -629,7 +629,7 @@
 											<height>140</height>
 											<posy>340</posy>
 											<align>center</align>
-											<!---Nume poster colectie neselectat--->
+											<!-- Nume poster colectie neselectat -->
 											<textcolor>FFFFFFFF</textcolor>
 											<font>font12</font>
 											<label>$INFO[ListItem.Label]</label>
@@ -758,7 +758,7 @@
 											<posy>310</posy>
 											<width>84</width>
 											<height>25</height>
-											<!---Colectii, an poster film selectat--->
+											<!-- Colectii, an poster film selectat -->
 											<textcolor>FF33CCFF</textcolor>
 											<font>font12</font>
 											<aligny>center</aligny>
@@ -771,7 +771,7 @@
 											<height>140</height>
 											<posy>340</posy>
 											<align>center</align>
-											<!---Colectii, nume poster film selectat--->
+											<!-- Colectii, nume poster film selectat -->
 											<textcolor>FF33CCFF</textcolor>
 											<font>font13</font>
 											<label>$INFO[ListItem.Label]</label>
@@ -791,7 +791,7 @@
 							<width>500</width>
 							<height>25</height>
 							<aligny>center</aligny>
-							<!---Movies, Cast (nr)--->
+							<!-- Movies, Cast (nr) -->
 							<textcolor>FFFFFFFF</textcolor>
 							<font>font14</font>
 							<label>[B]Cast$INFO[Container(1000).NumItems, (,)][/B]</label>
@@ -873,7 +873,7 @@
 											<height>140</height>
 											<posy>340</posy>
 											<align>center</align>
-											<!---Film, Cast, nume poster neselectat--->
+											<!-- Film, Cast, nume poster neselectat -->
 											<textcolor>FFFFFFFF</textcolor>
 											<font>font12</font>
 											<animation effect="fade" start="100" end="70" time="0" condition="Control.HasFocus(1000)">Conditional</animation>
@@ -917,7 +917,7 @@
 											<posx>0</posx>
 											<posy>340</posy>
 											<align>center</align>
-											<!---Film, Cast, nume poster selectat--->
+											<!-- Film, Cast, nume poster selectat -->
 											<textcolor>FF33CCFF</textcolor>
 											<font>font12</font>
 											<label>[B]$INFO[ListItem.Label]$INFO[ListItem.Property(character),[COLOR FF999999][CR],[/COLOR]]</label>
@@ -938,7 +938,7 @@
 							<width>500</width>
 							<height>25</height>
 							<aligny>center</aligny>
-							<!---Recommended By TMDB--->
+							<!-- Recommended By TMDB -->
 							<textcolor>FFFFFFFF</textcolor>
 							<font>font14</font>
 							<label>[B]Recommended By TMDB$INFO[Container(150).NumItems, (,)][/B]</label>
@@ -1011,7 +1011,7 @@
 											<posy>310</posy>
 											<width>84</width>
 											<height>25</height>
-											<!---Recommended An postere neselectate--->
+											<!-- Recommended An postere neselectate -->
 											<textcolor>FFFFFFFF</textcolor>
 											<font>font12</font>
 											<aligny>center</aligny>
@@ -1050,7 +1050,7 @@
 											<height>140</height>
 											<posy>340</posy>
 											<align>center</align>
-											<!---Recommended nume postere neselectate--->
+											<!-- Recommended nume postere neselectate -->
 											<textcolor>FFFFFFFF</textcolor>
 											<font>font12</font>
 											<label>$INFO[ListItem.Label]</label>
@@ -1150,7 +1150,7 @@
 											<posy>310</posy>
 											<width>84</width>
 											<height>25</height>
-											<!---Recommended an poster selectat--->
+											<!-- Recommended an poster selectat -->
 											<textcolor>FF33CCFF</textcolor>
 											<font>font12</font>
 											<aligny>center</aligny>
@@ -1163,7 +1163,7 @@
 											<height>140</height>
 											<posy>340</posy>
 											<align>center</align>
-											<!---Recommended nume poster selectat--->
+											<!-- Recommended nume poster selectat -->
 											<textcolor>FF33CCFF</textcolor>
 											<font>font12</font>
 											<label>$INFO[ListItem.Label]</label>
@@ -1215,7 +1215,7 @@
 							<width>500</width>
 							<height>25</height>
 							<aligny>center</aligny>
-							<!---Youtube official videos--->
+							<!-- Youtube official videos -->
 							<textcolor>FFFFFFFF</textcolor>
 							<font>font14</font>
 							<label>[B]Official videos$INFO[Container(1150).NumItems, (,)][/B]</label>
@@ -1292,7 +1292,7 @@
 										<height>140</height>
 										<posy>227</posy>
 										<align>center</align>
-										<!---Nume titlu youtube neselectat--->
+										<!-- Nume titlu youtube neselectat -->
 										<textcolor>FFFFFFFF</textcolor>
 										<font>font12</font>
 										<label>$INFO[ListItem.Property(Type),[B],: [/B]]$INFO[ListItem.Label]</label>
@@ -1334,7 +1334,7 @@
 										<height>140</height>
 										<posy>227</posy>
 										<align>center</align>
-										<!---Nume titlu youtube official selectat--->
+										<!-- Nume titlu youtube official selectat -->
 										<textcolor>FF33CCFF</textcolor>
 										<font>font12</font>
 										<label>[B]$INFO[ListItem.Property(Type),[B],: [/B]][B]$INFO[ListItem.Label][/B]</label>
@@ -1352,7 +1352,7 @@
 							<width>500</width>
 							<height>25</height>
 							<aligny>center</aligny>
-							<!---Youtube neofficial videos--->
+							<!-- Youtube neofficial videos -->
 							<textcolor>FFFFFFFF</textcolor>
 							<font>font14</font>
 							<label>YouTube videos$INFO[Container(350).NumItems, (,)]</label>
@@ -1432,7 +1432,7 @@
 										<height>140</height>
 										<posy>227</posy>
 										<align>center</align>
-										<!---Nume titlu youtube neoficial neselectat--->
+										<!-- Nume titlu youtube neoficial neselectat -->
 										<textcolor>FFFFFFFF</textcolor>
 										<font>font12</font>
 										<label>$INFO[ListItem.Label]</label>
@@ -1473,7 +1473,7 @@
 										<height>140</height>
 										<posy>227</posy>
 										<align>center</align>
-										<!---Nume titlu youtube neoficial selectat--->
+										<!-- Nume titlu youtube neoficial selectat -->
 										<textcolor>FF33CCFF</textcolor>
 										<font>font12</font>
 										<label>[B]$INFO[ListItem.Label][/B]</label>
@@ -1763,7 +1763,7 @@
 								<width>1018</width>
 								<height>50</height>
 								<label>$INFO[Window.Property(movie.Title)]</label>
-								<!---Nume principal sus film, serial, sezon, episod--->
+								<!-- Nume principal sus film, serial, sezon, episod -->
 								<textcolor>FF33CCFF</textcolor>
 								<font>font30_title</font>
 								<scroll>true</scroll>

@@ -9017,10 +9017,6 @@ def get_next_episodes(params=None):
     # Lock-ul se elibereaza DUPA scrierea cache-ului: procesele care asteapta
     # (widget/container) il gasesc gata si randeaza instant.
     _list_build_clear(cache_key)
-    try:
-        season_session.close()
-    except:
-        pass
 
 
 # FOR SEREN

@@ -2196,6 +2196,7 @@ def run_plugin():
 
     if mode == 'clear_sources_context':
         from resources.lib.core.cache import MainCache
+        from resources.lib.core.utils import log
         
         tmdb_id = params.get('tmdb_id')
         c_type = params.get('type')

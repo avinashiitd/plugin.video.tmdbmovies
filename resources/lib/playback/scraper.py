@@ -9,7 +9,7 @@ import time
 import random
 import datetime
 import threading
-from urllib.parse import urlencode, quote, urlparse
+from urllib.parse import urlencode, quote, urlparse, parse_qsl
 from resources.lib.core.config import BASE_URL, API_KEY, ADDON, get_headers, get_random_ua
 from resources.lib.core.utils import get_json, clean_text
 import urllib3
@@ -5194,7 +5194,7 @@ def scrape_torrentio(imdb_id, content_type, season=None, episode=None):
                         'addon': 'Torrentio',
                         'indexer': indexer,
                         'seeders': seeders,
-            'releaseGroup': release_group,
+                        'releaseGroup': _extract_release_group(filename) or '',
                         'quality': quality,
                     }
                 }

@@ -77,7 +77,7 @@
 					<posy>-15</posy>
 					<height>60</height>
 					<width>1050</width>
-					<!---Nume principal actor sus--->
+					<!-- Nume principal actor sus -->
 					<label>[B]$INFO[Window.Property(actor.title)][/B]</label>
 					<textcolor>FF33CCFF</textcolor>
 					<font>font30_title</font>
@@ -127,7 +127,7 @@
 						<posy>10</posy>
 						<width>1000</width>
 						<height>25</height>
-						<!---Birthday--->
+						<!-- Birthday -->
 						<textcolor>FF999999</textcolor>
 						<font>font13</font>
 						<label>$INFO[Window.Property(actor.Birthday),Birthday: [COLOR=FFFFFFFF],[/COLOR]] $INFO[Window.Property(actor.Age),Age: [COLOR=FFFFFFFF],[/COLOR]]</label>
@@ -140,7 +140,7 @@
 						<posy>10</posy>
 						<width>1000</width>
 						<height>25</height>
-						<!---Place of birth--->
+						<!-- Place of birth -->
 						<textcolor>FF999999</textcolor>
 						<font>font13</font>
 						<label>$INFO[Window.Property(actor.PlaceOfBirth),Place of birth: [COLOR=FFFFFFFF],[/COLOR]]</label>
@@ -153,7 +153,7 @@
 						<posy>10</posy>
 						<width>1000</width>
 						<height>25</height>
-						<!---Known/total movies--->
+						<!-- Known/total movies -->
 						<textcolor>FF999999</textcolor>
 						<font>font13</font>
 						<label>$INFO[Window.Property(actor.TotalMovies),Known movies: [COLOR=FFFFFFFF],[/COLOR]]</label>
@@ -236,7 +236,7 @@
 							<width>500</width>
 							<height>25</height>
 							<aligny>center</aligny>
-							<!---Movie actor roles--->
+							<!-- Movie actor roles -->
 							<textcolor>FFFFFFFF</textcolor>
 							<font>font14</font>
 							<label>[B]Movie actor roles$INFO[Container(150).NumItems, (,)][/B]</label>
@@ -325,7 +325,7 @@
 											<posy>310</posy>
 											<width>84</width>
 											<height>25</height>
-											<!---Actor, movie roles an postere neselectate--->
+											<!-- Actor, movie roles an postere neselectate -->
 											<textcolor>FFFFFFFF</textcolor>
 											<font>font12</font>
 											<aligny>center</aligny>
@@ -347,7 +347,7 @@
 											<posx>0</posx>
 											<posy>340</posy>
 											<align>center</align>
-											<!---Actor, movie roles, nume postere neselectate--->
+											<!-- Actor, movie roles, nume postere neselectate -->
 											<textcolor>FFFFFFFF</textcolor>
 											<font>font12</font>
 											<label>[B]$INFO[ListItem.Label][CR][COLOR FF999999]$INFO[ListItem.Property(Character)][/COLOR]</label>
@@ -446,7 +446,7 @@
 											<posy>310</posy>
 											<width>84</width>
 											<height>25</height>
-											<!---Actor, movie roles, an poster selectat--->
+											<!-- Actor, movie roles, an poster selectat -->
 											<textcolor>FF33CCFF</textcolor>
 											<font>font12</font>
 											<aligny>center</aligny>
@@ -459,7 +459,7 @@
 											<posx>0</posx>
 											<posy>340</posy>
 											<align>center</align>
-											<!---Actor, movie roles, nume poster selectat--->
+											<!-- Actor, movie roles, nume poster selectat -->
 											<textcolor>FF33CCFF</textcolor>
 											<font>font12</font>
 											<label>[B]$INFO[ListItem.Label][CR][COLOR FF999999]$INFO[ListItem.Property(Character)][/COLOR]</label>
@@ -510,7 +510,7 @@
 							<width>500</width>
 							<height>25</height>
 							<aligny>center</aligny>
-							<!---TV Show roles--->
+							<!-- TV Show roles -->
 							<textcolor>FFFFFFFF</textcolor>
 							<font>font14</font>
 							<label>[B]TV Show roles$INFO[Container(250).NumItems, (,)][/B]</label>
@@ -599,7 +599,7 @@
 											<posy>310</posy>
 											<width>84</width>
 											<height>25</height>
-											<!---Actor, tv show roles, an postere neselectate--->
+											<!-- Actor, tv show roles, an postere neselectate -->
 											<textcolor>FFFFFFFF</textcolor>
 											<font>font12</font>
 											<aligny>center</aligny>
@@ -621,7 +621,7 @@
 											<posx>0</posx>
 											<posy>340</posy>
 											<align>center</align>
-											<!---Actor, tv show roles, nume postere neselectate--->
+											<!-- Actor, tv show roles, nume postere neselectate -->
 											<textcolor>FFFFFFFF</textcolor>
 											<font>font12</font>
 											<label>[B]$INFO[ListItem.Label][CR][COLOR FF999999]$INFO[ListItem.Property(Character)][/COLOR]</label>
@@ -720,7 +720,7 @@
 											<posy>310</posy>
 											<width>84</width>
 											<height>25</height>
-											<!---Actor, tv show roles, an poster selectat--->
+											<!-- Actor, tv show roles, an poster selectat -->
 											<textcolor>FF33CCFF</textcolor>
 											<font>font12</font>
 											<aligny>center</aligny>
@@ -733,7 +733,7 @@
 											<posx>0</posx>
 											<posy>340</posy>
 											<align>center</align>
-											<!---Actor, tv show roles, nume poster selectat--->
+											<!-- Actor, tv show roles, nume poster selectat -->
 											<textcolor>FF33CCFF</textcolor>
 											<font>font12</font>
 											<label>[B]$INFO[ListItem.Label][CR][COLOR FF999999]$INFO[ListItem.Property(Character)][/COLOR]</label>
@@ -785,7 +785,7 @@
 							<width>500</width>
 							<height>25</height>
 							<aligny>center</aligny>
-							<!---Youtube videos--->
+							<!-- Youtube videos -->
 							<textcolor>FFFFFFFF</textcolor>
 							<font>font14</font>
 							<label>[B]YouTube videos$INFO[Container(350).NumItems, (,)][/B]</label>
@@ -848,7 +848,7 @@
 										<posx>0</posx>
 										<posy>227</posy>
 										<align>center</align>
-										<!---Youtube videos nume neselectate--->
+										<!-- Youtube videos nume neselectate -->
 										<textcolor>FFFFFFFF</textcolor>
 										<font>font12</font>
 										<label>[B]$INFO[ListItem.Label][/B]</label>
@@ -889,7 +889,7 @@
 										<posx>0</posx>
 										<posy>227</posy>
 										<align>center</align>
-										<!---Youtube videos nume selectat--->
+										<!-- Youtube videos nume selectat -->
 										<textcolor>FF33CCFF</textcolor>
 										<font>font12</font>
 										<label>[B]$INFO[ListItem.Label][/B]</label>
